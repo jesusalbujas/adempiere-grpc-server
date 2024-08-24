@@ -95,6 +95,7 @@ protobuf {
 			// If true, will generate a descriptor_set.desc file under
 			// task.outputBaseDir. Default is false.
 			// See --descriptor_set_out in protoc documentation about what it is.
+			task.repositoryResolver = new MavenRepositoryResolver()
 			task.generateDescriptorSet = true
 
 			// Allows to override the default for the descriptor set location
