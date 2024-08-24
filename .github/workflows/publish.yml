@@ -160,42 +160,42 @@ jobs:
       - name: Upload Descriptor
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.pb/adempiere-grpc-server.pb
           
       - name: Upload Envoy config
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: envoy.yaml/envoy.yaml
 
       - name: Upload zip
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.zip/adempiere-grpc-server.zip
 
       - name: Upload zip.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.zip.MD5/adempiere-grpc-server.zip.MD5
 
       - name: Upload tar
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.tar/adempiere-grpc-server.tar
 
       - name: Upload tar.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.tar.MD5/adempiere-grpc-server.tar.MD5
 
@@ -333,8 +333,7 @@ jobs:
 
       - name: Push image in Docker Hub
         uses: docker/build-push-action@v4
-        with:
-          context: .
+        with:          context: .
           file: docker/grpc_proxy.Dockerfile
           platforms: linux/amd64,linux/amd64/v2,linux/arm64/v8
           push: true
