@@ -132,18 +132,15 @@ jobs:
           architecture: x64
 
       - name: Publish with Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 8.0.2
           arguments: publish
         env:
           LIBRARY_VERSION: ${{ github.event.release.tag_name }}
-          GITHUB_DEPLOY_USER: ${{ github.actor }}
-          GITHUB_DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+          GITHUB_DEPLOY_USER: "${{ github.actor }}"
+          GITHUB_DEPLOY_TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
           GITHUB_DEPLOY_REPOSITORY: ${{ secrets.DEPLOY_REPOSITORY }}
-          # ORG_GRADLE_PROJECT_deployUsername: ${{ secrets.DEPLOY_USER }}
-          # ORG_GRADLE_PROJECT_deployToken: ${{ secrets.DEPLOY_TOKEN }}
-          # ORG_GRADLE_PROJECT_deployRepository: ${{ secrets.DEPLOY_REPOSITORY }}
           GITHUB_PACKAGES_URL: https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
   publish-binaries:
@@ -160,42 +157,42 @@ jobs:
       - name: Upload Descriptor
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: adempiere-grpc-server.pb/adempiere-grpc-server.pb
           
       - name: Upload Envoy config
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: envoy.yaml/envoy.yaml
 
       - name: Upload zip
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: adempiere-grpc-server.zip/adempiere-grpc-server.zip
 
       - name: Upload zip.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: adempiere-grpc-server.zip.MD5/adempiere-grpc-server.zip.MD5
 
       - name: Upload tar
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: adempiere-grpc-server.tar/adempiere-grpc-server.tar
 
       - name: Upload tar.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: adempiere-grpc-server.tar.MD5/adempiere-grpc-server.tar.MD5
 
@@ -334,7 +331,7 @@ jobs:
       - name: Push image in Docker Hub
         uses: docker/build-push-action@v4
         with:
-        context: .
+          context: .
           file: docker/grpc_proxy.Dockerfile
           platforms: linux/amd64,linux/amd64/v2,linux/arm64/v8
           push: true
