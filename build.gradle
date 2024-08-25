@@ -21,15 +21,26 @@ def descriptorFile = "adempiere-grpc-server.pb"
 def javaMainClass = "org.spin.server.AllInOneServices"
 
 repositories {
-	mavenLocal()
+    maven { // The google mirror is less flaky than mavenCentral()
+        url "https://maven-central.storage-download.googleapis.com/repos/central/data/"
+    }
+    maven { url "https://clojars.org/repo" }
     mavenCentral()
+    mavenLocal()
+//	maven {
+//		url = 'https://maven.pkg.github.com/solop-develop/adempiere_customizations'
+//		credentials {
+//			username = System.getenv("GITHUB_DEPLOY_USER") ?: System.properties['deploy.user']
+//			password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: System.properties['deploy.token']
+//		}
+//	}
     maven {
-    	url = System.getenv("GITHUB_DEPLOY_REPOSITORY") ?: System.properties['deploy.repository'] ?: 'https://maven.pkg.github.com/solop-develop/adempiere_customizations'
+        url = "https://maven.pkg.github.com/spuy/spuy-core"
         credentials {
-        	username = System.getenv("GITHUB_DEPLOY_USER") ?: System.properties['deploy.user']
-            password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: System.properties['deploy.token'] 
-		}
-	}
+            username = System.getenv("GITHUB_DEPLOY_USER") ?: project.properties['deploy.user']
+            password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: project.properties['deploy.token']
+        }
+    }
 }
 dependencies {
     implementation fileTree(
@@ -38,6 +49,10 @@ dependencies {
             '*.jar'
         ]
     )
+
+    //implementation project(":spuy-core")
+    implementation 'uy.solop:050-spuy-core:3.9.4-r-17.10'
+
 	implementation "io.netty:netty-handler:4.1.107.Final"
     implementation "io.grpc:grpc-alts:${grpcVersion}"
 	runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
@@ -127,7 +142,6 @@ dependencies {
 	//	Temporary projects
 	//	Keycloak and Okta connector (Open-ID based) (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-open-id-connector)
 	implementation "${baseGroupId}:adempiere-open-id-connector:1.0.0"
-
 }
 
 configurations.all {
@@ -164,7 +178,7 @@ protobuf {
 			// If true, the descriptor set will contain line number information
 			// and comments. Default is false.
 			task.descriptorSetOptions.includeSourceInfo = true
-		
+
 			// If true, the descriptor set will contain all transitive imports and
 			// is therefore self-contained. Default is false.
 			task.descriptorSetOptions.includeImports = true
@@ -257,6 +271,11 @@ task createRelease(type: Copy) {
    	}
 }
 
+tasks.withType(Copy) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+tasks.withType(Tar) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+tasks.withType(Zip) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+
+
 task cleanBuild(type: GradleBuild) {
 	tasks = ['clean', 'build']
 }
@@ -267,10 +286,10 @@ publishing {
     repositories {
 		mavenLocal()
         maven {
-            url = System.properties['deploy.packages'] ?: System.getenv("GITHUB_PACKAGES_URL") ?: "https://maven.pkg.github.com/solop-develop/backend"
+            url = System.properties['deploy.packages'] ?: System.getenv("GITHUB_PACKAGES_URL") ?: "https://maven.pkg.github.com/spuy/backend"
             credentials {
-                username = System.properties['deploy.user'] ?: System.getenv("GITHUB_DEPLOY_USER") ?: ''
-                password = System.properties['deploy.token'] ?: System.getenv("GITHUB_DEPLOY_TOKEN") ?: ''
+                username = project.properties['deploy.user'] ?: System.getenv("GITHUB_DEPLOY_USER")
+                password = project.properties['deploy.token'] ?: System.getenv("GITHUB_DEPLOY_TOKEN")
             }
         }
     }
