@@ -141,7 +141,7 @@ dependencies {
 
 	//	Temporary projects
 	//	Keycloak and Okta connector (Open-ID based) (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-open-id-connector)
-	implementation "${baseGroupId}:adempiere-open-id-connector:1.0.1"
+	implementation "${baseGroupId}:adempiere-open-id-connector:1.0.0"
 }
 
 configurations.all {
