@@ -28,7 +28,6 @@ import org.adempiere.core.domains.models.I_AD_Menu;
 import org.adempiere.core.domains.models.I_AD_Org;
 import org.adempiere.core.domains.models.I_AD_Process;
 import org.adempiere.core.domains.models.I_AD_Role;
-import org.adempiere.core.domains.models.I_AD_User_Authentication;
 import org.adempiere.core.domains.models.I_AD_Window;
 import org.adempiere.core.domains.models.I_AD_Workflow;
 import org.adempiere.core.domains.models.I_M_Warehouse;
@@ -64,9 +63,6 @@ import org.spin.authentication.services.OpenIDUtil;
 import org.spin.backend.grpc.security.ChangeRoleRequest;
 import org.spin.backend.grpc.security.Client;
 import org.spin.backend.grpc.security.DictionaryEntity;
-import org.spin.backend.grpc.security.DictionaryType;
-import org.spin.backend.grpc.security.GetDictionaryAccessRequest;
-import org.spin.backend.grpc.security.GetDictionaryAccessResponse;
 import org.spin.backend.grpc.security.ListOrganizationsRequest;
 import org.spin.backend.grpc.security.ListOrganizationsResponse;
 import org.spin.backend.grpc.security.ListRolesRequest;
@@ -80,7 +76,6 @@ import org.spin.backend.grpc.security.LoginRequest;
 import org.spin.backend.grpc.security.LogoutRequest;
 import org.spin.backend.grpc.security.Menu;
 import org.spin.backend.grpc.security.MenuRequest;
-import org.spin.backend.grpc.security.MenuResponse;
 import org.spin.backend.grpc.security.Organization;
 import org.spin.backend.grpc.security.Role;
 import org.spin.backend.grpc.security.SecurityGrpc.SecurityImplBase;
@@ -128,7 +123,7 @@ public class Security extends SecurityImplBase {
 	/**	Logger			*/
 	private CLogger log = CLogger.getCLogger(Security.class);
 	/**	Menu */
-	private static CCache<String, MenuResponse.Builder> menuCache = new CCache<String, MenuResponse.Builder>("Menu_for_User", 30, 0);
+	private static CCache<String, Menu.Builder> menuCache = new CCache<String, Menu.Builder>("Menu_for_User", 30, 0);
 
 
 
@@ -138,7 +133,7 @@ public class Security extends SecurityImplBase {
 			log.fine("List Services");
 			ListServicesResponse.Builder serviceBuilder = ListServicesResponse.newBuilder();
 			Hashtable<Integer, Map<String, String>> services = OpenIDUtil.getAuthenticationServices();
-			services.entrySet().parallelStream().forEach(service -> {
+			services.entrySet().forEach(service -> {
 				Service.Builder availableService = Service.newBuilder();
 				availableService.setId(service.getKey())
 					.setDisplayName(
@@ -253,21 +248,14 @@ public class Security extends SecurityImplBase {
 		MRole role = MRole.get(context, currentSession.getAD_Role_ID());
 
 		// Session values
-		boolean isOpenID = false;
-		if (currentSession.get_ColumnIndex(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) >= 0) {
-			isOpenID = currentSession.get_ValueAsInt(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) > 0;
-		}
-
-		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSessionAndGetToken(
+		final String bearerToken = SessionManager.createSession(
 			currentSession.getWebSession(),
 			language,
 			role.getAD_Role_ID(),
 			userId,
 			currentSession.getAD_Org_ID(),
-			warehouseId,
-			isOpenID
+			warehouseId
 		);
 
 		// Update session preferences
@@ -300,7 +288,27 @@ public class Security extends SecurityImplBase {
 			);
 		}
 	}
-
+	
+	@Override
+	public void getMenu(MenuRequest request, StreamObserver<Menu> responseObserver) {
+		try {
+			if(request == null) {
+				throw new AdempiereException("Object Request Null");
+			}
+			Menu.Builder menuBuilder = convertMenu();
+			responseObserver.onNext(menuBuilder.build());
+			responseObserver.onCompleted();
+		} catch (Exception e) {
+			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
+			responseObserver.onError(
+				Status.INTERNAL
+					.withDescription(e.getLocalizedMessage())
+					.withCause(e)
+					.asRuntimeException()
+			);
+		}
+	}
 
 
 	@Override
@@ -520,7 +528,7 @@ public class Security extends SecurityImplBase {
 					&& attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					organizationBuilder.setCorporateBrandingImage(
 					ValueManager.validateNull(
-						attachmentReference.getFileName()
+						attachmentReference.getValidFileName()
 					)
 				);
 			}
@@ -839,14 +847,13 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSessionAndGetToken(
-				clientVersion,
-				language,
-				roleId,
-				userId,
-				organizationId,
-				warehouseId,
-				isOpenID
+			final String bearerToken = SessionManager.createSession(
+				clientVersion, 
+				language, 
+				roleId, 
+				userId, 
+				organizationId, 
+				warehouseId
 			);
 			builder.setToken(bearerToken);
 			//	Return session
@@ -884,19 +891,34 @@ public class Security extends SecurityImplBase {
 		if(validUser == null) {
 			throw new AdempiereException("@AD_User_ID@ / @AD_Role_ID@ / @AD_Org_ID@ @NotFound@");
 		}
-		return createValidSession(
-			true,
-			request.getClientVersion(),
-			request.getLanguage(),
-			-1,
-			validUser.getAD_User_ID(),
-			-1,
-			-1,
-			true
-		);
+		return createValidSession(true, request.getClientVersion(), request.getLanguage(), -1, validUser.getAD_User_ID(), -1, -1); 
 	}
 
 
+	/**
+	 * Convert Values from Context
+	 * @param value
+	 * @return
+	 */
+//	private Value.Builder convertObjectFromContext(String value) {
+//		Value.Builder builder = Value.newBuilder();
+//		if (Util.isEmpty(value)) {
+//			return builder;
+//		}
+//		if (ValueUtil.isNumeric(value)) {
+//			builder.setIntValue(ValueUtil.getIntegerFromString(value));
+//		} else if (ValueUtil.isBoolean(value)) {
+//			boolean booleanValue = ValueUtil.stringToBoolean(value.trim());
+//			builder.setBooleanValue(booleanValue);
+//		} else if (ValueUtil.isDate(value)) {
+//			return ValueUtil.getValueFromDate(ValueUtil.getDateFromString(value));
+//		} else {
+//			builder.setStringValue(ValueUtil.validateNull(value));
+//		}
+//		//	
+//		return builder;
+//	}
+	
 	@Override
 	public void runChangeRole(ChangeRoleRequest request, StreamObserver<Session> responseObserver) {
 		try {
@@ -971,19 +993,7 @@ public class Security extends SecurityImplBase {
 
 		// Session values
 		Session.Builder builder = Session.newBuilder();
-		boolean isOpenID = false;
-		if (currentSession.get_ColumnIndex(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) >= 0) {
-			isOpenID = currentSession.get_ValueAsInt(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) > 0;
-		}
-		final String bearerToken = SessionManager.createSessionAndGetToken(
-			currentSession.getWebSession(),
-			language,
-			roleId,
-			userId,
-			organizationId,
-			warehouseId,
-			isOpenID
-		);
+		final String bearerToken = SessionManager.createSession(currentSession.getWebSession(), language, roleId, userId, organizationId, warehouseId);
 		builder.setToken(bearerToken);
 		// Logout
 		logoutSession(LogoutRequest.newBuilder().build());
@@ -1034,8 +1044,7 @@ public class Security extends SecurityImplBase {
 			ValueManager.validateNull(ContextManager.getDefaultLanguage(Env.getAD_Language(Env.getCtx()))));
 		//	Set default context
 		Struct.Builder contextValues = Struct.newBuilder();
-		Env.getCtx().entrySet()
-			.stream()
+		Env.getCtx().entrySet().stream()
 			.filter(keyValue -> {
 				return ContextManager.isSessionContext(
 					String.valueOf(
@@ -1053,12 +1062,7 @@ public class Security extends SecurityImplBase {
 			});
 		session.setDefaultContext(contextValues);
 	}
-
-	/**
-	 * Convert Values from Context
-	 * @param value
-	 * @return
-	 */
+	
 	private Value.Builder convertObjectFromContext(String value) {
 		Value.Builder builder = Value.newBuilder();
 		if (Util.isEmpty(value)) {
@@ -1082,7 +1086,8 @@ public class Security extends SecurityImplBase {
 		return builder;
 	}
 
-
+	
+	
 	/**
 	 * Logout session
 	 * @param request
@@ -1187,7 +1192,7 @@ public class Security extends SecurityImplBase {
 					&& attachmentReference.getAD_AttachmentReference_ID() > 0) {
 				userInfo.setImage(
 					ValueManager.validateNull(
-						attachmentReference.getFileName()
+						attachmentReference.getValidFileName()
 					)
 				);
 			}
@@ -1268,7 +1273,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogo(
 						ValueManager.validateNull(
-							attachmentReference.getFileName()
+							attachmentReference.getValidFileName()
 						)
 					);
 				}
@@ -1283,7 +1288,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogoReport(
 						ValueManager.validateNull(
-							attachmentReference.getFileName()
+							attachmentReference.getValidFileName()
 						)
 					);
 				}
@@ -1298,7 +1303,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogoWeb(
 						ValueManager.validateNull(
-							attachmentReference.getFileName()
+							attachmentReference.getValidFileName()
 						)
 					);
 				}
@@ -1677,7 +1682,7 @@ public class Security extends SecurityImplBase {
 		}
 		return builder;
 	}
-
+	
 	/**
 	 * Add children to menu
 	 * @param context
