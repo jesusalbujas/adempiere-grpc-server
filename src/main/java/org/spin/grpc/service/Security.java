@@ -260,14 +260,13 @@ public class Security extends SecurityImplBase {
 
 		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSessionAndGetToken(
+		final String bearerToken = SessionManager.createSession(
 			currentSession.getWebSession(),
 			language,
 			role.getAD_Role_ID(),
 			userId,
 			currentSession.getAD_Org_ID(),
-			warehouseId,
-			isOpenID
+			warehouseId
 		);
 
 		// Update session preferences
@@ -839,14 +838,13 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSessionAndGetToken(
+			final String bearerToken = SessionManager.createSession(
 				clientVersion,
 				language,
 				roleId,
 				userId,
 				organizationId,
-				warehouseId,
-				isOpenID
+				warehouseId
 			);
 			builder.setToken(bearerToken);
 			//	Return session
@@ -975,14 +973,13 @@ public class Security extends SecurityImplBase {
 		if (currentSession.get_ColumnIndex(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) >= 0) {
 			isOpenID = currentSession.get_ValueAsInt(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) > 0;
 		}
-		final String bearerToken = SessionManager.createSessionAndGetToken(
+		final String bearerToken = SessionManager.createSession(
 			currentSession.getWebSession(),
 			language,
 			roleId,
 			userId,
 			organizationId,
-			warehouseId,
-			isOpenID
+			warehouseId
 		);
 		builder.setToken(bearerToken);
 		// Logout
