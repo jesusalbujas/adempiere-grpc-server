@@ -65,9 +65,6 @@ import org.spin.backend.grpc.security.Client;
 import org.spin.backend.grpc.security.DictionaryEntity;
 import org.spin.backend.grpc.security.ListOrganizationsRequest;
 import org.spin.backend.grpc.security.ListOrganizationsResponse;
-import org.spin.backend.grpc.security.DictionaryType;
-import org.spin.backend.grpc.security.GetDictionaryAccessRequest;
-import org.spin.backend.grpc.security.GetDictionaryAccessResponse;
 import org.spin.backend.grpc.security.ListRolesRequest;
 import org.spin.backend.grpc.security.ListRolesResponse;
 import org.spin.backend.grpc.security.ListServicesRequest;
@@ -802,16 +799,7 @@ public class Security extends SecurityImplBase {
 				}
 			}
 		}
-		return createValidSession(
-			isDefaultRole,
-			request.getClientVersion(),
-			request.getLanguage(),
-			roleId,
-			userId,
-			organizationId,
-			warehouseId,
-			false
-		);
+		return createValidSession(isDefaultRole, request.getClientVersion(), request.getLanguage(), roleId, userId, organizationId, warehouseId);
 	}
 
 	/**
@@ -825,7 +813,7 @@ public class Security extends SecurityImplBase {
 	 * @param warehouseId
 	 * @return
 	 */
-	private Session.Builder createValidSession(boolean isDefaultRole, String clientVersion, String language, int roleId, int userId, int organizationId, int warehouseId, boolean isOpenID) {
+	private Session.Builder createValidSession(boolean isDefaultRole, String clientVersion, String language, int roleId, int userId, int organizationId, int warehouseId) {
 		Session.Builder builder = Session.newBuilder();
 			if(isDefaultRole && roleId <= 0) {
 				roleId = SessionManager.getDefaultRoleId(userId);
@@ -850,14 +838,7 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSession(
-				clientVersion, 
-				language, 
-				roleId, 
-				userId, 
-				organizationId, 
-				warehouseId
-			);
+			final String bearerToken = SessionManager.createSession(clientVersion, language, roleId, userId, organizationId, warehouseId);
 			builder.setToken(bearerToken);
 			//	Return session
 			return builder;
@@ -1381,41 +1362,19 @@ public class Security extends SecurityImplBase {
 	}
 
 
-
-	@Override
-	public void getMenu(MenuRequest request, StreamObserver<MenuResponse> responseObserver) {
-		try {
-			if(request == null) {
-				throw new AdempiereException("Menu Request Null");
-			}
-			MenuResponse.Builder menuBuilder = convertMenu();
-			responseObserver.onNext(menuBuilder.build());
-			responseObserver.onCompleted();
-		} catch (Exception e) {
-			log.severe(e.getLocalizedMessage());
-			e.printStackTrace();
-			responseObserver.onError(
-				Status.INTERNAL
-					.withDescription(e.getLocalizedMessage())
-					.withCause(e)
-					.asRuntimeException()
-			);
-		}
-	}
-
 	/**
 	 * Convert Menu
 	 * @return
 	 */
-	private MenuResponse.Builder convertMenu() {
+	private Menu.Builder convertMenu() {
 		int roleId = Env.getAD_Role_ID(Env.getCtx());
 		int userId = Env.getAD_User_ID(Env.getCtx());
 		String menuKey = roleId + "|" + userId + "|" + Env.getAD_Language(Env.getCtx());
-		MenuResponse.Builder builderList = menuCache.get(menuKey);
-		if(builderList != null) {
-			return builderList;
+		Menu.Builder builder = menuCache.get(menuKey);
+		if(builder != null) {
+			return builder;
 		}
-
+		builder = Menu.newBuilder();
 		MMenu menu = new MMenu(Env.getCtx(), 0, null);
 		menu.setName(Msg.getMsg(Env.getCtx(), "Menu"));
 		//	Get Reference
@@ -1427,12 +1386,10 @@ public class Security extends SecurityImplBase {
 		if (treeId <= 0) {
 			treeId = MTree.getDefaultTreeIdFromTableId(menu.getAD_Client_ID(), I_AD_Menu.Table_ID);
 		}
-
-		if(treeId > 0) {
-			builderList = MenuResponse.newBuilder();
+		if(treeId != 0) {
 			MTree tree = new MTree(Env.getCtx(), treeId, false, false, null, null);
 			//	
-			// Menu.Builder builder = convertMenu(Env.getCtx(), menu, 0, Env.getAD_Language(Env.getCtx()));
+			builder = convertMenu(Env.getCtx(), menu, 0, Env.getAD_Language(Env.getCtx()));
 			//	Get main node
 			MTreeNode rootNode = tree.getRoot();
 			Enumeration<?> childrens = rootNode.children();
@@ -1446,14 +1403,12 @@ public class Security extends SecurityImplBase {
 				);
 				//	Explode child
 				addChildren(Env.getCtx(), childBuilder, child, Env.getAD_Language(Env.getCtx()));
-				// builder.addChildren(childBuilder.build());
-				builderList.addMenus(childBuilder);
+				builder.addChildren(childBuilder.build());
 			}
 		}
-
 		//	Set from DB
-		menuCache.put(menuKey, builderList);
-		return builderList;
+		menuCache.put(menuKey, builder);
+		return builder;
 	}
 
 	/**
@@ -1505,6 +1460,7 @@ public class Security extends SecurityImplBase {
 			)
 			.setIsSummary(menu.isSummary())
 			.setIsReadOnly(menu.isReadOnly())
+			.setIsActive(menu.isActive())
 		;
 		//	Supported actions
 		if(!Util.isEmpty(menu.getAction(), true)) {
@@ -1535,15 +1491,8 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setActionId(form.getAD_Form_ID())
-					.setActionUuid(
-						ValueManager.validateNull(
-							form.getUUID()
-						)
-					)
-					.setForm(actionReference)
-				;
-			} else if (menu.getAction().equals(MMenu.ACTION_Window) && menu.getAD_Window_ID() > 0) {
+				builder.setForm(actionReference);
+			} else if (menu.getAction().equals(MMenu.ACTION_Window) &&menu.getAD_Window_ID() > 0) {
 				MWindow window = new MWindow(context, menu.getAD_Window_ID(), null);
 				actionReference.setId(
 						window.getAD_Window_ID()
@@ -1569,14 +1518,7 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setActionId(window.getAD_Window_ID())
-					.setActionUuid(
-						ValueManager.validateNull(
-							window.getUUID()
-						)
-					)
-					.setWindow(actionReference)
-				;
+				builder.setWindow(actionReference);
 				
 			} else if ((menu.getAction().equals(MMenu.ACTION_Process) || menu.getAction().equals(MMenu.ACTION_Report))
 					&& menu.getAD_Process_ID() > 0) {
@@ -1605,14 +1547,8 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setActionId(process.getAD_Process_ID())
-					.setActionUuid(
-						ValueManager.validateNull(
-							process.getUUID()
-						)
-					)
-					.setProcess(actionReference)
-				;
+				builder.setProcess(actionReference);
+				
 			} else if (menu.getAction().equals(MMenu.ACTION_SmartBrowse) && menu.getAD_Browse_ID() > 0) {
 				MBrowse smartBrowser = MBrowse.get(context, menu.getAD_Browse_ID());
 				actionReference.setId(
@@ -1639,14 +1575,8 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setActionId(smartBrowser.getAD_Browse_ID())
-					.setActionUuid(
-						ValueManager.validateNull(
-							smartBrowser.getUUID()
-						)
-					)
-					.setBrowser(actionReference)
-				;
+				builder.setBrowse(actionReference);
+				
 			} else if (menu.getAction().equals(MMenu.ACTION_WorkFlow) && menu.getAD_Workflow_ID() > 0) {
 				MWorkflow workflow = MWorkflow.get(context, menu.getAD_Workflow_ID());
 				actionReference.setId(
@@ -1673,14 +1603,7 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setActionId(workflow.getAD_Workflow_ID())
-					.setActionUuid(
-						ValueManager.validateNull(
-							workflow.getUUID()
-						)
-					)
-					.setWorkflow(actionReference)
-				;
+				builder.setWorkflow(actionReference);
 			}
 		}
 		return builder;
@@ -1713,131 +1636,4 @@ public class Security extends SecurityImplBase {
 			);
 		}
 	}
-
-
-
-	@Override
-	public void getDictionaryAccess(GetDictionaryAccessRequest request, StreamObserver<GetDictionaryAccessResponse> responseObserver) {
-		try {
-			log.fine("Get Dictionary Access");
-			GetDictionaryAccessResponse.Builder builder = getDictionaryAccess(request);
-			responseObserver.onNext(builder.build());
-			responseObserver.onCompleted();
-		} catch (Exception e) {
-			log.severe(e.getLocalizedMessage());
-			e.printStackTrace();
-			responseObserver.onError(
-				Status.INTERNAL
-					.withDescription(e.getLocalizedMessage())
-					.withCause(e)
-					.asRuntimeException()
-			);
-		}
-	}
-
-	GetDictionaryAccessResponse.Builder getDictionaryAccess(GetDictionaryAccessRequest request) {
-		GetDictionaryAccessResponse.Builder builder = GetDictionaryAccessResponse.newBuilder();
-		if (request.getDictionaryType() == DictionaryType.UNKNOW) {
-			throw new AdempiereException("DictionaryType @Mandatory@");
-		}
-		int dictionaryId = request.getId();
-		if (dictionaryId <= 0) {
-			throw new AdempiereException("@Record_ID@ @Mandatory@");
-		}
-
-		MRole role = MRole.getDefault();
-
-		boolean isWithAccess = false;
-		String message = "";
-		if (request.getDictionaryTypeValue() == DictionaryType.MENU_VALUE) {
-			isWithAccess = true;
-		} else if (request.getDictionaryTypeValue() == DictionaryType.WINDOW_VALUE) {
-			isWithAccess = true;
-			Boolean isRoleAccess = role.getWindowAccess(dictionaryId);
-			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
-				message += "@AD_Window_ID@ without role access.";
-				isWithAccess = false;
-			}
-			boolean isRecordAccess = role.isRecordAccess(
-				I_AD_Window.Table_ID,
-				dictionaryId,
-				MRole.SQL_RO
-			);
-			if (!isRecordAccess) {
-				if (!Util.isEmpty(message, true)) {
-					message += " | ";
-				}
-				message += "@AD_Window_ID@ without record access.";
-				isWithAccess = false;
-			}
-		} else if (request.getDictionaryTypeValue() == DictionaryType.PROCESS_VALUE) {
-			isWithAccess = true;
-			Boolean isRoleAccess = role.getProcessAccess(dictionaryId);
-			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
-				message += "@AD_Process_ID@ without role access.";
-				isWithAccess = false;
-			}
-			boolean isRecordAccess = role.isRecordAccess(
-				I_AD_Process.Table_ID,
-				dictionaryId,
-				MRole.SQL_RO
-			);
-			if (!isRecordAccess) {
-				if (!Util.isEmpty(message, true)) {
-					message += " | ";
-				}
-				message += "@AD_Process_ID@ without record access.";
-				isWithAccess = false;
-			}
-		} else if (request.getDictionaryTypeValue() == DictionaryType.BROWSER_VALUE) {
-			isWithAccess = true;
-			Boolean isRoleAccess = role.getBrowseAccess(dictionaryId);
-			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
-				message += "@AD_Browse_ID@ without role access.";
-				isWithAccess = false;
-			}
-			boolean isRecordAccess = role.isRecordAccess(
-				I_AD_Browse.Table_ID,
-				dictionaryId,
-				MRole.SQL_RO
-			);
-			if (!isRecordAccess) {
-				if (!Util.isEmpty(message, true)) {
-					message += " | ";
-				}
-				message += "@AD_Browse_ID@ without record access.";
-				isWithAccess = false;
-			}
-		} else if (request.getDictionaryTypeValue() == DictionaryType.FORM_VALUE) {
-			isWithAccess = true;
-			Boolean isRoleAccess = role.getFormAccess(dictionaryId);
-			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
-				message += "@AD_Form_ID@ without role access.";
-				isWithAccess = false;
-			}
-			boolean isRecordAccess = role.isRecordAccess(
-				I_AD_Form.Table_ID,
-				dictionaryId,
-				MRole.SQL_RO
-			);
-			if (!isRecordAccess) {
-				if (!Util.isEmpty(message, true)) {
-					message += " | ";
-				}
-				message += "@AD_Form_ID@ without record access.";
-				isWithAccess = false;
-			}
-		}
-
-		builder.setIsAccess(isWithAccess)
-			.setMessage(
-				ValueManager.validateNull(
-					message
-				)
-			)
-		;
-
-		return builder;
-	}
-
 }
