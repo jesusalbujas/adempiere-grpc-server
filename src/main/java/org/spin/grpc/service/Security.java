@@ -1008,7 +1008,14 @@ public class Security extends SecurityImplBase {
 		session.setStandardPrecision(currency.getStdPrecision());
 		session.setCostingPrecision(currency.getCostingPrecision());
 		session.setLanguage(
-			ValueManager.validateNull(ContextManager.getDefaultLanguage(Env.getAD_Language(Env.getCtx()))));
+			ValueManager.validateNull(
+				ContextManager.getDefaultLanguage(
+					Env.getAD_Language(
+						Env.getCtx()
+					)
+				)
+			)
+		);
 		//	Set default context
 		Struct.Builder contextValues = Struct.newBuilder();
 		Env.getCtx().entrySet().stream()
@@ -1321,7 +1328,8 @@ public class Security extends SecurityImplBase {
 	private Menu.Builder convertMenu() {
 		int roleId = Env.getAD_Role_ID(Env.getCtx());
 		int userId = Env.getAD_User_ID(Env.getCtx());
-		String menuKey = roleId + "|" + userId + "|" + Env.getAD_Language(Env.getCtx());
+		String language = Env.getAD_Language(Env.getCtx());
+		String menuKey = roleId + "|" + userId + "|" + language;
 		Menu.Builder builder = menuCache.get(menuKey);
 		if(builder != null) {
 			return builder;
@@ -1331,8 +1339,8 @@ public class Security extends SecurityImplBase {
 		menu.setName(Msg.getMsg(Env.getCtx(), "Menu"));
 		//	Get Reference
 		int treeId = DB.getSQLValue(null,
-			"SELECT COALESCE(r.AD_Tree_Menu_ID, ci.AD_Tree_Menu_ID)" 
-			+ "FROM AD_ClientInfo ci" 
+			"SELECT COALESCE(r.AD_Tree_Menu_ID, ci.AD_Tree_Menu_ID)"
+			+ "FROM AD_ClientInfo ci"
 			+ " INNER JOIN AD_Role r ON (ci.AD_Client_ID=r.AD_Client_ID) "
 			+ "WHERE AD_Role_ID=?", roleId);
 		if (treeId <= 0) {
@@ -1351,10 +1359,10 @@ public class Security extends SecurityImplBase {
 					Env.getCtx(),
 					MMenu.getFromId(Env.getCtx(), child.getNode_ID()),
 					child.getParent_ID(),
-					Env.getAD_Language(Env.getCtx())
+					language
 				);
 				//	Explode child
-				addChildren(Env.getCtx(), childBuilder, child, Env.getAD_Language(Env.getCtx()));
+				addChildren(Env.getCtx(), childBuilder, child, language);
 				builder.addChildren(childBuilder.build());
 			}
 		}
