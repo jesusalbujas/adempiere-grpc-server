@@ -35,7 +35,6 @@ service MaterialManagement {
 	rpc ListProductStorage(ListProductStorageRequest) returns (data.ListEntitiesResponse) {
 		option (google.api.http) = { get: "/material-management/products-storage" };
 	}
-
 	// Attribute Set
 	rpc ListProductAttributeValues(ListProductAttributeValuesRequest) returns (data.ListEntitiesResponse) {
 		option (google.api.http) = { get: "/material-management/attribute-values" };
@@ -58,7 +57,6 @@ service MaterialManagement {
 			body: "*"
 		};
 	}
-
 	// Locator
 	rpc ListAvailableWarehouses(ListAvailableWarehousesRequest) returns (ListAvailableWarehousesResponse) {
 		option (google.api.http) = { get: "/material-management/warehouses" };

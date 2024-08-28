@@ -49,6 +49,7 @@ import org.adempiere.core.domains.models.I_AD_Private_Access;
 import org.adempiere.core.domains.models.I_AD_Process_Para;
 import org.adempiere.core.domains.models.I_AD_Record_Access;
 import org.adempiere.core.domains.models.I_AD_Role;
+import org.adempiere.core.domains.models.I_AD_Tab;
 import org.adempiere.core.domains.models.I_AD_Table;
 import org.adempiere.core.domains.models.I_CM_Chat;
 import org.adempiere.core.domains.models.I_R_MailText;
@@ -60,6 +61,7 @@ import org.adempiere.model.MView;
 import org.adempiere.model.MViewColumn;
 import org.adempiere.model.MViewDefinition;
 import org.compiere.model.Callout;
+import org.compiere.model.CalloutOrder;
 import org.compiere.model.GridField;
 import org.compiere.model.GridFieldVO;
 import org.compiere.model.GridTab;
@@ -85,7 +87,6 @@ import org.compiere.model.MTab;
 import org.compiere.model.MTable;
 import org.compiere.model.MUser;
 import org.compiere.model.PO;
-import org.compiere.model.POAdapter;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -105,8 +106,6 @@ import org.spin.backend.grpc.user_interface.CreateChatEntryRequest;
 import org.spin.backend.grpc.user_interface.CreateTabEntityRequest;
 import org.spin.backend.grpc.user_interface.DefaultValue;
 import org.spin.backend.grpc.user_interface.DeletePreferenceRequest;
-import org.spin.backend.grpc.user_interface.ExportBrowserItemsRequest;
-import org.spin.backend.grpc.user_interface.ExportBrowserItemsResponse;
 import org.spin.backend.grpc.user_interface.GetContextInfoValueRequest;
 import org.spin.backend.grpc.user_interface.GetDefaultValueRequest;
 import org.spin.backend.grpc.user_interface.GetPrivateAccessRequest;
@@ -143,24 +142,20 @@ import org.spin.backend.grpc.user_interface.UserInterfaceGrpc.UserInterfaceImplB
 import org.spin.base.db.OrderByUtil;
 import org.spin.base.db.QueryUtil;
 import org.spin.base.db.WhereClauseUtil;
-import org.spin.base.interim.ContextTemporaryWorkaround;
+import org.spin.base.query.FilterManager;
+import org.spin.base.query.SortingManager;
 import org.spin.base.util.ContextManager;
 import org.spin.base.util.ConvertUtil;
 import org.spin.base.util.LookupUtil;
 import org.spin.base.util.RecordUtil;
 import org.spin.base.util.ReferenceInfo;
 import org.spin.base.util.ReferenceUtil;
-import org.spin.dictionary.util.WindowUtil;
-import org.spin.grpc.service.ui.BrowserLogic;
-import org.spin.grpc.service.ui.CalloutLogic;
 import org.spin.grpc.service.ui.UserInterfaceLogic;
 import org.spin.model.MADContextInfo;
 import org.spin.service.grpc.authentication.SessionManager;
 import org.spin.service.grpc.util.db.CountUtil;
 import org.spin.service.grpc.util.db.LimitUtil;
 import org.spin.service.grpc.util.db.ParameterUtil;
-import org.spin.service.grpc.util.query.FilterManager;
-import org.spin.service.grpc.util.query.SortingManager;
 import org.spin.service.grpc.util.value.BooleanManager;
 import org.spin.service.grpc.util.value.NumberManager;
 import org.spin.service.grpc.util.value.TimeManager;
@@ -205,23 +200,6 @@ public class UserInterface extends UserInterfaceImplBase {
 	}
 
 
-	@Override
-	public void exportBrowserItems(ExportBrowserItemsRequest request, StreamObserver<ExportBrowserItemsResponse> responseObserver) {
-		try {
-			log.fine("Object List Requested = " + request);
-			ExportBrowserItemsResponse.Builder entityValueList = BrowserLogic.exportBrowserItems(request);
-			responseObserver.onNext(entityValueList.build());
-			responseObserver.onCompleted();
-		} catch (Exception e) {
-			log.severe(e.getLocalizedMessage());
-			e.printStackTrace();
-			responseObserver.onError(Status.INTERNAL
-				.withDescription(e.getLocalizedMessage())
-				.withCause(e)
-				.asRuntimeException()
-			);
-		}
-	}
 
 	@Override
 	public void updateBrowserEntity(UpdateBrowserEntityRequest request, StreamObserver<Entity> responseObserver) {
@@ -229,8 +207,8 @@ public class UserInterface extends UserInterfaceImplBase {
 			if (request == null) {
 				throw new AdempiereException("Requested is Null");
 			}
-			log.fine("UpdateBrowserEntityRequest = " + request);
-			Entity.Builder entityValue = updateBrowserEntity(request);
+			log.fine("Object List Requested = " + request);
+			Entity.Builder entityValue = updateBrowserEntity(Env.getCtx(), request);
 			responseObserver.onNext(entityValue.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
@@ -244,98 +222,68 @@ public class UserInterface extends UserInterfaceImplBase {
 
 	/**
 	 * Update Browser Entity
+	 * @param Env.getCtx()
 	 * @param request
 	 * @return
 	 */
-	private Entity.Builder updateBrowserEntity(UpdateBrowserEntityRequest request) {
-		Properties context = Env.getCtx();
-		MBrowse browser = ASPUtil.getInstance(context).getBrowse(request.getId());
+	private Entity.Builder updateBrowserEntity(Properties context, UpdateBrowserEntityRequest request) {
+		MBrowse browser = ASPUtil.getInstance(Env.getCtx()).getBrowse(request.getId());
 
 		if (!browser.isUpdateable()) {
-			throw new AdempiereException("Smart Browser not updateable records");
+			throw new AdempiereException("Smart Browser not updateable record");
 		}
 
 		if (browser.getAD_Table_ID() <= 0) {
 			throw new AdempiereException("No Table defined in the Smart Browser");
 		}
-		final MTable table = MTable.get(context, browser.getAD_Table_ID());
 
-		PO entity = RecordUtil.getEntity(context, table.getAD_Table_ID(), null, request.getRecordId(), null);
+		PO entity = RecordUtil.getEntity(Env.getCtx(), browser.getAD_Table_ID(), null, request.getRecordId(), null);
 		if (entity == null || entity.get_ID() <= 0) {
 			// Return
 			return ConvertUtil.convertEntity(entity);
 		}
 
-		MView view = new MView(context, browser.getAD_View_ID());
+		MView view = new MView(Env.getCtx(), browser.getAD_View_ID());
 		List<MViewColumn> viewColumnsList = view.getViewColumns();
 
-		request.getAttributes().getFieldsMap().entrySet().parallelStream().forEach(attribute -> {
+		request.getAttributes().getFieldsMap().entrySet().forEach(attribute -> {
 			// find view column definition
 			MViewColumn viewColumn = viewColumnsList
-				.parallelStream()
-				.filter(currentViewColumn -> {
-					return currentViewColumn.getColumnName().equals(attribute.getKey());
+				.stream()
+				.filter(column -> {
+					return column.getColumnName().equals(attribute.getKey());
 				})
 				.findFirst()
-				.orElse(null)
-			;
+				.get();
+
 			// if view aliases not exists, next element
-			if (viewColumn == null || viewColumn.getAD_View_Column_ID() <= 0) {
+			if (viewColumn == null) {
 				return;
 			}
+			MViewDefinition viewDefinition = MViewDefinition.get(Env.getCtx(), viewColumn.getAD_View_Definition_ID());
 
-			MViewDefinition viewDefinition = MViewDefinition.get(context, viewColumn.getAD_View_Definition_ID());
 			// not same table setting in smart browser and view definition
 			if (browser.getAD_Table_ID() != viewDefinition.getAD_Table_ID()) {
-				log.info("Browse Table " + browser.getAD_Table_ID() + " and View Definition Table " + viewDefinition.getAD_Table_ID() + " different ");
 				return;
 			}
+			String columnName = MColumn.getColumnName(Env.getCtx(), viewColumn.getAD_Column_ID());
 
-			MBrowseField browseField = MBrowseField.get(browser, viewColumn);
-			if (browseField == null || browseField.getAD_Browse_Field_ID() <= 0) {
-				log.warning("Browse Field no found");
-				return;
-			}
-			if (!browseField.isActive() || browseField.isReadOnly()) {
-				log.warning("Browse Field not updateable: " + browseField.getName());
-				return;
-			}
-
-			MColumn column = MColumn.get(browser.getCtx(), viewColumn.getAD_Column_ID());
-			if (column == null || column.getAD_Column_ID() <= 0) {
-				// column is not present on current table
-				return;
-			}
-			if (column.isVirtualColumn() || column.isKey() || !column.isUpdateable()) {
-				// virtual column with columnSQL
-				log.warning("Column is virtual column or not updateable: " + column.getColumnName());
-				return;
-			}
-			String columnName = column.getColumnName();
-			int referenceId = column.getAD_Reference_ID();
+			int referenceId = org.spin.dictionary.util.DictionaryUtil.getReferenceId(entity.get_Table_ID(), columnName);
 
 			Object value = null;
-			if (!attribute.getValue().hasNullValue()) {
-				if (referenceId > 0) {
-					value = ValueManager.getObjectFromReference(
-						attribute.getValue(),
-						referenceId
-					);
-				}
-				if (value == null) {
-					value = ValueManager.getObjectFromValue(attribute.getValue());
-				}
+			if (referenceId > 0) {
+				value = ValueManager.getObjectFromReference(
+					attribute.getValue(),
+					referenceId
+				);
+			}
+			if (value == null) {
+				value = ValueManager.getObjectFromValue(attribute.getValue());
 			}
 			entity.set_ValueOfColumn(columnName, value);
 		});
 		//	Save entity
-		if (entity.is_Changed()) {
-			entity.saveEx();
-		} else {
-			log.severe(
-				Msg.parseTranslation(context, "@Ignored@")
-			);
-		}
+		entity.saveEx();
 
 		//	Return
 		return ConvertUtil.convertEntity(entity);
@@ -601,32 +549,30 @@ public class UserInterface extends UserInterfaceImplBase {
 		if (request.getTabId() <= 0) {
 			throw new AdempiereException("@FillMandatory@ @AD_Tab_ID@");
 		}
-		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+		MTab tab = new Query(
+			Env.getCtx(),
+			MTab.Table_Name,
+			MTab.COLUMNNAME_AD_Tab_ID + " = ? ",
+			null
+		)
+		.setParameters(request.getTabId())
+		.first();
 		if (tab == null || tab.getAD_Tab_ID() <= 0) {
 			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
 		}
 		MTable table = MTable.get(Env.getCtx(), tab.getAD_Table_ID());
+		String tableName = table.getTableName();
 		String[] keyColumns = table.getKeyColumns();
 
 		String sql = QueryUtil.getTabQueryWithReferences(tab);
 		// add filter
-		StringBuffer whereClause = new StringBuffer();
-		List<Object> filtersList = new ArrayList<Object>();
+		StringBuffer whereClause = new StringBuffer()
+			.append(" WHERE ")
+		;
+		List<Object> parametersLit = new ArrayList<Object>();
 		if (keyColumns.length == 1) {
-			for (final String keyColumnName: table.getKeyColumns()) {
-				MColumn column = table.getColumn(keyColumnName);
-				if (DisplayType.isID(column.getAD_Reference_ID())) {
-					if (whereClause.length() > 0) {
-						whereClause.append(" OR ");
-					}
-					whereClause.append(
-						table.getTableName() + "." + keyColumnName + " = ?"
-					);
-					filtersList.add(
-						request.getId()
-					);
-				}
-			}
+			whereClause.append(tableName + "." + tableName + "_ID = ?");
+			parametersLit.add(request.getId());
 		} else {
 			String whereMultiKeys = WhereClauseUtil.getWhereClauseFromKeyColumns(keyColumns);
 			whereMultiKeys = WhereClauseUtil.getWhereRestrictionsWithAlias(
@@ -634,16 +580,14 @@ public class UserInterface extends UserInterfaceImplBase {
 				whereMultiKeys
 			);
 			whereClause.append(whereMultiKeys);
-			filtersList = multiKeys;
+			parametersLit = multiKeys;
 		}
-		sql += " WHERE " + whereClause.toString();
+		sql += whereClause.toString();
 
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;
 		Entity.Builder valueObjectBuilder = Entity.newBuilder()
-			.setTableName(
-				table.getTableName()
-			)
+			.setTableName(table.getTableName())
 		;
 		CLogger log = CLogger.getCLogger(UserInterface.class);
 
@@ -651,17 +595,14 @@ public class UserInterface extends UserInterfaceImplBase {
 			LinkedHashMap<String, MColumn> columnsMap = new LinkedHashMap<>();
 			//	Add field to map
 			for (MColumn column: table.getColumnsAsList()) {
-				columnsMap.put(
-					column.getColumnName().toUpperCase(),
-					column
-				);
+				columnsMap.put(column.getColumnName().toUpperCase(), column);
 			}
 
 			//	SELECT Key, Value, Name FROM ...
 			pstmt = DB.prepareStatement(sql, null);
 
 			// add query parameters
-			ParameterUtil.setParametersFromObjectsList(pstmt, filtersList);
+			ParameterUtil.setParametersFromObjectsList(pstmt, parametersLit);
 
 			//	Get from Query
 			rs = pstmt.executeQuery();
@@ -671,9 +612,9 @@ public class UserInterface extends UserInterfaceImplBase {
 				for (int index = 1; index <= metaData.getColumnCount(); index++) {
 					try {
 						String columnName = metaData.getColumnName(index);
-						MColumn column = columnsMap.get(columnName.toUpperCase());
+						MColumn field = columnsMap.get(columnName.toUpperCase());
 						//	Display Columns
-						if(column == null) {
+						if(field == null) {
 							String displayValue = rs.getString(index);
 							Value.Builder displayValueBuilder = ValueManager.getValueFromString(displayValue);
 
@@ -683,17 +624,15 @@ public class UserInterface extends UserInterfaceImplBase {
 							);
 							continue;
 						}
-						if (column.isKey()) {
-							valueObjectBuilder.setId(
-								rs.getInt(index)
-							);
+						if (field.isKey()) {
+							valueObjectBuilder.setId(rs.getInt(index));
 						}
 						//	From field
-						String fieldColumnName = column.getColumnName();
+						String fieldColumnName = field.getColumnName();
 						Object value = rs.getObject(index);
 						Value.Builder valueBuilder = ValueManager.getValueFromReference(
 							value,
-							column.getAD_Reference_ID()
+							field.getAD_Reference_ID()
 						);
 						rowValues.putFields(
 							fieldColumnName,
@@ -704,13 +643,6 @@ public class UserInterface extends UserInterfaceImplBase {
 						e.printStackTrace();
 					}
 				}
-
-				// TODO: Temporary Workaround
-				rowValues = ContextTemporaryWorkaround.setContextAsUnknowColumn(
-					table.getTableName(),
-					rowValues
-				);
-
 				valueObjectBuilder.setValues(rowValues);
 			}
 		} catch (Exception e) {
@@ -803,14 +735,13 @@ public class UserInterface extends UserInterfaceImplBase {
 
 		//	Add from reference
 		//	TODO: Add support to this functionality
-		if(!Util.isEmpty(request.getRecordReferenceUuid(), true)) {
+		if(!Util.isEmpty(request.getRecordReferenceUuid())) {
 			String referenceWhereClause = RecordUtil.referenceWhereClauseCache.get(request.getRecordReferenceUuid());
-			if(!Util.isEmpty(referenceWhereClause, true)) {
-				String validationCode = WhereClauseUtil.getWhereRestrictionsWithAlias(tableName, referenceWhereClause);
+			if(!Util.isEmpty(referenceWhereClause)) {
 				if(whereClause.length() > 0) {
 					whereClause.append(" AND ");
 				}
-				whereClause.append("(").append(validationCode).append(")");
+				whereClause.append("(").append(referenceWhereClause).append(")");
 			}
 		}
 
@@ -872,7 +803,7 @@ public class UserInterface extends UserInterfaceImplBase {
 		return builder;
 	}
 
-
+	
 	@Override
 	public void createTabEntity(CreateTabEntityRequest request, StreamObserver<Entity> responseObserver) {
 		try {
@@ -896,7 +827,14 @@ public class UserInterface extends UserInterfaceImplBase {
 		if (request.getTabId() <= 0) {
 			throw new AdempiereException("@FillMandatory@ @AD_Tab_ID@");
 		}
-		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+
+		MTab tab = new Query(
+			Env.getCtx(),
+			I_AD_Tab.Table_Name,
+			"AD_Tab_ID = ?",
+			null
+		).setParameters(request.getTabId())
+		.first();
 		if (tab == null || tab.getAD_Tab_ID() <= 0) {
 			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
 		}
@@ -906,14 +844,9 @@ public class UserInterface extends UserInterfaceImplBase {
 		if (entity == null) {
 			throw new AdempiereException("@Error@ PO is null");
 		}
-
 		Map<String, Value> attributes = new HashMap<>(request.getAttributes().getFieldsMap());
-		attributes.entrySet().stream().forEach(attribute -> {
-			String columnName = attribute.getKey();
-			int referenceId = org.spin.dictionary.util.DictionaryUtil.getReferenceId(
-				entity.get_Table_ID(),
-				columnName
-			);
+		attributes.entrySet().forEach(attribute -> {
+			int referenceId = org.spin.dictionary.util.DictionaryUtil.getReferenceId(entity.get_Table_ID(), attribute.getKey());
 			Object value = null;
 			if (referenceId > 0) {
 				value = ValueManager.getObjectFromReference(
@@ -924,7 +857,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			if (value == null) {
 				value = ValueManager.getObjectFromValue(attribute.getValue());
 			}
-			entity.set_ValueOfColumn(columnName, value);
+			entity.set_ValueOfColumn(attribute.getKey(), value);
 		});
 		//	Save entity
 		entity.saveEx();
@@ -975,7 +908,13 @@ public class UserInterface extends UserInterfaceImplBase {
 			throw new AdempiereException("@FillMandatory@ @AD_Tab_ID@");
 		}
 
-		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+		MTab tab = new Query(
+			Env.getCtx(),
+			I_AD_Tab.Table_Name,
+			"AD_Tab_ID = ?",
+			null
+		).setParameters(request.getTabId())
+		.first();
 		if (tab == null || tab.getAD_Tab_ID() <= 0) {
 			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
 		}
@@ -1005,42 +944,30 @@ public class UserInterface extends UserInterfaceImplBase {
 			throw new AdempiereException("@Error@ @PO@ @NotFound@");
 		}
 		PO currentEntity = entity;
-		POAdapter adapter = new POAdapter(currentEntity);
-
 		attributes.entrySet().forEach(attribute -> {
-			final String columnName = attribute.getKey();
-			MColumn column = table.getColumn(columnName);
-			if (column == null || column.getAD_Column_ID() <= 0) {
-				// checks if the column exists in the database
-				return;
-			}
-			if (Arrays.stream(keyColumns).anyMatch(columnName::equals)) {
-				// prevent warning `PO.set_Value: Column not updateable`
-				return;
-			}
-			int referenceId = column.getAD_Reference_ID();
+			int referenceId = org.spin.dictionary.util.DictionaryUtil.getReferenceId(
+				currentEntity.get_Table_ID(),
+				attribute.getKey()
+			);
 			Object value = null;
-			if (!attribute.getValue().hasNullValue()) {
-				if (referenceId > 0) {
-					value = ValueManager.getObjectFromReference(
-						attribute.getValue(),
-						referenceId
-					);
-				} 
-				if (value == null) {
-					value = ValueManager.getObjectFromValue(
-						attribute.getValue()
-					);
-				}
+			if (referenceId > 0) {
+				value = ValueManager.getObjectFromReference(
+					attribute.getValue(),
+					referenceId
+				);
+			} 
+			if (value == null) {
+				value = ValueManager.getObjectFromValue(attribute.getValue());
 			}
-			adapter.set_ValueNoCheck(columnName, value);
+			currentEntity.set_ValueOfColumn(attribute.getKey(), value);
 		});
 		//	Save entity
 		currentEntity.saveEx();
 
+
 		GetTabEntityRequest.Builder getEntityBuilder = GetTabEntityRequest.newBuilder()
 			.setTabId(request.getTabId())
-			.setId(entity.get_ID())
+			.setId(currentEntity.get_ID())
 		;
 
 		Entity.Builder builder = getTabEntity(
@@ -1100,7 +1027,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			.setId(recordId)
 		;
 		//	Populate access List
-		getRecordAccess(tableId, recordId, null).parallelStream().forEach(recordAccess -> {
+		getRecordAccess(tableId, recordId, null).forEach(recordAccess -> {
 			MRole role = MRole.get(Env.getCtx(), recordAccess.getAD_Role_ID());
 			builder.addCurrentRoles(RecordAccessRole.newBuilder()
 				.setRoleId(role.getAD_Role_ID())
@@ -1115,7 +1042,7 @@ public class UserInterface extends UserInterfaceImplBase {
 				.setIsReadOnly(recordAccess.isReadOnly()));
 		});
 		//	Populate roles list
-		getRolesList(null).parallelStream().forEach(role -> {
+		getRolesList(null).forEach(role -> {
 			builder.addAvailableRoles(
 				RecordAccessRole.newBuilder()
 					.setRoleId(role.getAD_Role_ID())
@@ -1187,7 +1114,7 @@ public class UserInterface extends UserInterfaceImplBase {
 					+ "AND Record_ID = ? "
 					+ "AND AD_Client_ID = ?", new Object[]{tableId, recordId.get(), Env.getAD_Client_ID(Env.getCtx())}, transactionName);
 			//	Add new record access
-			request.getRecordAccessesList().parallelStream().forEach(recordAccessToSet -> {
+			request.getRecordAccessesList().forEach(recordAccessToSet -> {
 				int roleId = recordAccessToSet.getRoleId();
 				if(roleId <= 0) {
 					throw new AdempiereException("@AD_Role_ID@ @NotFound@");
@@ -1215,7 +1142,7 @@ public class UserInterface extends UserInterfaceImplBase {
 				);
 			});
 			//	Populate roles list
-			getRolesList(transactionName).parallelStream().forEach(roleToGet -> {
+			getRolesList(transactionName).forEach(roleToGet -> {
 				builder.addAvailableRoles(
 					RecordAccessRole.newBuilder()
 						.setRoleId(roleToGet.getAD_Role_ID())
@@ -1409,19 +1336,12 @@ public class UserInterface extends UserInterfaceImplBase {
 			new Query(Env.getCtx(), tableName + "_Trl", whereClause.toString(), transactionName)
 				.setParameters(parameters)
 				.<PO>list()
-				.parallelStream()
 				.forEach(translation -> {
 					Translation.Builder translationBuilder = Translation.newBuilder();
 					Struct.Builder translationValues = Struct.newBuilder();
-					table.getColumnsAsList().parallelStream()
-						.filter(column -> {
-							return column.isTranslated();
-						})
-						.forEach(column -> {
-							Object value = translation.get_Value(column.getColumnName());
-							if(value == null) {
-								return;
-							}
+					table.getColumnsAsList().stream().filter(column -> column.isTranslated()).forEach(column -> {
+						Object value = translation.get_Value(column.getColumnName());
+						if(value != null) {
 							Value.Builder builderValue = ValueManager.getValueFromObject(value);
 							if(builderValue != null) {
 								translationValues.putFields(
@@ -1437,7 +1357,8 @@ public class UserInterface extends UserInterfaceImplBase {
 									)
 								);
 							}
-						});
+						}
+					});
 					translationBuilder.setValues(translationValues);
 					builder.addTranslations(translationBuilder);
 				});
@@ -1488,7 +1409,7 @@ public class UserInterface extends UserInterfaceImplBase {
 								|| entity.get_ID() <= 0) {
 							throw new AdempiereException("@Error@ @PO@ @NotFound@");
 						}
-						changeLogList.parallelStream().forEach(changeLog -> {
+						changeLogList.forEach(changeLog -> {
 							setValueFromChangeLog(entity, changeLog);
 						});
 						entity.saveEx(transactionName);
@@ -1680,11 +1601,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			int fieldId = field.getAD_Field_ID();
 			List<MField> customFields = ASPUtil.getInstance(Env.getCtx()).getWindowFields(field.getAD_Tab_ID());
 			if(customFields != null) {
-				Optional<MField> maybeField = customFields.parallelStream()
-					.filter(customField -> {
-						return customField.getAD_Field_ID() == fieldId;
-					})
-					.findFirst();
+				Optional<MField> maybeField = customFields.stream().filter(customField -> customField.getAD_Field_ID() == fieldId).findFirst();
 				if(maybeField.isPresent()) {
 					field = maybeField.get();
 					defaultValue = field.getDefaultValue();
@@ -1717,11 +1634,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			int browseFieldId = browseField.getAD_Browse_Field_ID();
 			List<MBrowseField> customFields = ASPUtil.getInstance(Env.getCtx()).getBrowseFields(browseField.getAD_Browse_ID());
 			if(customFields != null) {
-				Optional<MBrowseField> maybeField = customFields.parallelStream()
-					.filter(customField -> {
-						return customField.getAD_Browse_Field_ID() == browseFieldId;
-					})
-					.findFirst();
+				Optional<MBrowseField> maybeField = customFields.stream().filter(customField -> customField.getAD_Browse_Field_ID() == browseFieldId).findFirst();
 				if(maybeField.isPresent()) {
 					browseField = maybeField.get();
 					defaultValue = browseField.getDefaultValue();
@@ -1749,11 +1662,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			int browseFieldId = browseField.getAD_Browse_Field_ID();
 			List<MBrowseField> customFields = ASPUtil.getInstance(Env.getCtx()).getBrowseFields(browseField.getAD_Browse_ID());
 			if(customFields != null) {
-				Optional<MBrowseField> maybeField = customFields.parallelStream()
-					.filter(customField -> {
-						return customField.getAD_Browse_Field_ID() == browseFieldId;
-					})
-					.findFirst();
+				Optional<MBrowseField> maybeField = customFields.stream().filter(customField -> customField.getAD_Browse_Field_ID() == browseFieldId).findFirst();
 				if(maybeField.isPresent()) {
 					browseField = maybeField.get();
 					defaultValue = browseField.getDefaultValue2(); // value to
@@ -1780,11 +1689,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			int processParameterId = processParameter.getAD_Process_Para_ID();
 			List<MProcessPara> customParameters = ASPUtil.getInstance(Env.getCtx()).getProcessParameters(processParameter.getAD_Process_ID());
 			if(customParameters != null) {
-				Optional<MProcessPara> maybeParameter = customParameters.parallelStream()
-					.filter(customField -> {
-						return customField.getAD_Process_Para_ID() == processParameterId;
-					})
-					.findFirst();
+				Optional<MProcessPara> maybeParameter = customParameters.stream().filter(customField -> customField.getAD_Process_Para_ID() == processParameterId).findFirst();
 				if(maybeParameter.isPresent()) {
 					processParameter = maybeParameter.get();
 					referenceId = processParameter.getAD_Reference_ID();
@@ -1802,11 +1707,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			int processParameterId = processParameter.getAD_Process_Para_ID();
 			List<MProcessPara> customParameters = ASPUtil.getInstance(Env.getCtx()).getProcessParameters(processParameter.getAD_Process_ID());
 			if(customParameters != null) {
-				Optional<MProcessPara> maybeParameter = customParameters.parallelStream()
-					.filter(customField -> {
-						return customField.getAD_Process_Para_ID() == processParameterId;
-					})
-					.findFirst();
+				Optional<MProcessPara> maybeParameter = customParameters.stream().filter(customField -> customField.getAD_Process_Para_ID() == processParameterId).findFirst();
 				if(maybeParameter.isPresent()) {
 					processParameter = maybeParameter.get();
 					referenceId = processParameter.getAD_Reference_ID();
@@ -1849,11 +1750,7 @@ public class UserInterface extends UserInterfaceImplBase {
 		// overwrite default value with user value request
 		if (Optional.ofNullable(request.getValue()).isPresent()
 			&& !Util.isEmpty(request.getValue().getStringValue())) {
-			// URL decode to change characteres
-			final String overwriteValue = ValueManager.getDecodeUrl(
-				request.getValue().getStringValue()
-			);
-			defaultValue = overwriteValue;
+			defaultValue = request.getValue().getStringValue();
 		}
 
 		//	Validate SQL
@@ -1984,19 +1881,11 @@ public class UserInterface extends UserInterfaceImplBase {
 					}
 				}
 
-				MLookupInfo lookupInfo = ReferenceUtil.getReferenceLookupInfo(
-					displayTypeId,
-					referenceValueId,
-					columnName,
-					validationRuleId
-				);
+				MLookupInfo lookupInfo = ReferenceUtil.getReferenceLookupInfo(displayTypeId, referenceValueId, columnName, validationRuleId);
 				if(lookupInfo == null || Util.isEmpty(lookupInfo.QueryDirect, true)) {
 					return builder;
 				}
-				final String sql = WhereClauseUtil.removeIsActiveRestriction(
-					lookupInfo.TableName,
-					lookupInfo.QueryDirect
-				);
+				final String sql = lookupInfo.QueryDirect;
 				// final String sql = MRole.getDefault(context, false).addAccessSQL(
 				// 	lookupInfo.QueryDirect,
 				// 	lookupInfo.TableName,
@@ -2262,8 +2151,7 @@ public class UserInterface extends UserInterfaceImplBase {
 			request.getBrowseFieldId(),
 			request.getColumnId(),
 			request.getColumnName(),
-			request.getTableName(),
-			request.getIsWithoutValidation()
+			request.getTableName()
 		);
 		if (reference == null) {
 			throw new AdempiereException("@AD_Reference_ID@ @NotFound@");
@@ -2276,6 +2164,17 @@ public class UserInterface extends UserInterfaceImplBase {
 			request.getPageToken(),
 			request.getSearchValue(),
 			request.getIsOnlyActiveRecords()
+		);
+	}
+
+	public static ListLookupItemsResponse.Builder listLookupItems(MLookupInfo reference, String contextAttributes, int pageSize, String pageToken, String searchValue) {
+		return listLookupItems(
+			reference,
+			contextAttributes,
+			pageSize,
+			pageToken,
+			searchValue,
+			false
 		);
 	}
 	/**
@@ -2306,10 +2205,9 @@ public class UserInterface extends UserInterfaceImplBase {
 			throw new AdempiereException("@AD_Reference_ID@ @WhereClause@ @Unparseable@");
 		}
 
-		// TODO: Fix with list document type
-		// if (isOnlyActiveRecords) {
-		// 	sql = WhereClauseUtil.addIsActiveRestriction(reference.TableName, sql);
-		// }
+		if (isOnlyActiveRecords) {
+			sql = WhereClauseUtil.addIsActiveRestriction(reference.TableName, sql);
+		}
 		String sqlWithRoleAccess = MRole.getDefault(context, false)
 			.addAccessSQL(
 				sql,
@@ -2319,32 +2217,8 @@ public class UserInterface extends UserInterfaceImplBase {
 			)
 		;
 
-		String sqlWithActiveRecords = sqlWithRoleAccess;
-		if (isOnlyActiveRecords) {
-			//	Order by
-			String queryWithoutOrderBy = org.spin.service.grpc.util.db.OrderByUtil.removeOrderBy(sqlWithRoleAccess);
-			String orderByClause = org.spin.service.grpc.util.db.OrderByUtil.getOnlyOrderBy(sqlWithRoleAccess);
-	
-			StringBuffer whereClause = new StringBuffer()
-				.append(" AND ")
-			;
-			if (!Util.isEmpty(reference.TableName, true)) {
-				whereClause.append(reference.TableName)
-					.append(".")
-				;
-			}
-			whereClause.append("IsActive = 'Y' ");
-
-			sqlWithActiveRecords = queryWithoutOrderBy + whereClause.toString() + orderByClause;
-		}
-
 		List<Object> parameters = new ArrayList<>();
-		String parsedSQL = RecordUtil.addSearchValueAndGet(
-			sqlWithActiveRecords,
-			reference.TableName,
-			searchValue,
-			parameters
-		);
+		String parsedSQL = RecordUtil.addSearchValueAndGet(sqlWithRoleAccess, reference.TableName, searchValue, parameters);
 
 		//	Get page and count
 		int count = CountUtil.countRecords(parsedSQL, reference.TableName, parameters);
@@ -2459,11 +2333,9 @@ public class UserInterface extends UserInterfaceImplBase {
 		}
 		HashMap<String, Object> parameterMap = new HashMap<>();
 		//	Populate map
-		FilterManager.newInstance(request.getFilters()).getConditions()
-			.parallelStream()
-			.forEach(condition -> {
-				parameterMap.put(condition.getColumnName(), condition.getValue());
-			});
+		FilterManager.newInstance(request.getFilters()).getConditions().forEach(condition -> {
+			parameterMap.put(condition.getColumnName(), condition.getValue());
+		});
 
 		//	Fill context
 		int windowNo = ThreadLocalRandom.current().nextInt(1, 8996 + 1);
@@ -2542,13 +2414,105 @@ public class UserInterface extends UserInterfaceImplBase {
 		//	Add Order By
 		parsedSQL = parsedSQL + orderByClause;
 		//	Return
-		List<Entity> entitiesList = BrowserLogic.convertBrowserResult(browser, parsedSQL, filterValues);
-		builder.addAllRecords(entitiesList);
+		builder = convertBrowserResult(browser, parsedSQL, filterValues);
 		//	Validate page token
 		builder.setNextPageToken(
 			ValueManager.validateNull(nexPageToken)
 		);
 		builder.setRecordCount(count);
+		//	Return
+		return builder;
+	}
+	
+	/**
+	 * Convert SQL to list values
+	 * @param pagePrefix
+	 * @param browser
+	 * @param sql
+	 * @param values
+	 * @return
+	 */
+	private ListBrowserItemsResponse.Builder convertBrowserResult(MBrowse browser, String sql, List<Object> parameters) {
+		PreparedStatement pstmt = null;
+		ResultSet rs = null;
+		ListBrowserItemsResponse.Builder builder = ListBrowserItemsResponse.newBuilder();
+		long recordCount = 0;
+		try {
+			LinkedHashMap<String, MBrowseField> fieldsMap = new LinkedHashMap<>();
+			//	Add field to map
+			for(MBrowseField field: ASPUtil.getInstance().getBrowseFields(browser.getAD_Browse_ID())) {
+				fieldsMap.put(field.getAD_View_Column().getColumnName().toUpperCase(), field);
+			}
+			//	SELECT Key, Value, Name FROM ...
+			pstmt = DB.prepareStatement(sql, null);
+			ParameterUtil.setParametersFromObjectsList(pstmt, parameters);
+
+			MBrowseField fieldKey = browser.getFieldKey();
+			String keyColumnName = null;
+			if (fieldKey != null && fieldKey.get_ID() > 0) {
+				keyColumnName = fieldKey.getAD_View_Column().getColumnName();
+			}
+			keyColumnName = ValueManager.validateNull(keyColumnName);
+
+			//	Get from Query
+			rs = pstmt.executeQuery();
+			while(rs.next()) {
+				Struct.Builder rowValues = Struct.newBuilder();
+				ResultSetMetaData metaData = rs.getMetaData();
+
+				Entity.Builder entityBuilder = Entity.newBuilder();
+				if (!Util.isEmpty(keyColumnName, true) && rs.getObject(keyColumnName) != null) {
+					entityBuilder.setId(
+						rs.getInt(keyColumnName)
+					);
+				}
+				for (int index = 1; index <= metaData.getColumnCount(); index++) {
+					try {
+						String columnName = metaData.getColumnName(index);
+						MBrowseField field = fieldsMap.get(columnName.toUpperCase());
+						//	Display Columns
+						if(field == null) {
+							String displayValue = rs.getString(index);
+							Value.Builder displayValueBuilder = ValueManager.getValueFromString(displayValue);
+
+							rowValues.putFields(
+								columnName,
+								displayValueBuilder.build()
+							);
+							continue;
+						}
+						//	From field
+						String fieldColumnName = field.getAD_View_Column().getColumnName();
+						Object value = rs.getObject(index);
+						Value.Builder valueBuilder = ValueManager.getValueFromReference(
+							value,
+							field.getAD_Reference_ID()
+						);
+						rowValues.putFields(
+							fieldColumnName,
+							valueBuilder.build()
+						);
+					} catch (Exception e) {
+						log.severe(e.getLocalizedMessage());
+					}
+				}
+				//	
+				entityBuilder.setValues(rowValues);
+				builder.addRecords(entityBuilder.build());
+				recordCount++;
+			}
+		} catch (Exception e) {
+			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
+		} finally {
+			DB.close(rs, pstmt);
+			rs = null;
+			pstmt = null;
+		}
+		//	Set record counts
+		if (builder.getRecordCount() <= 0) {
+			builder.setRecordCount(recordCount);
+		}
 		//	Return
 		return builder;
 	}
@@ -2562,9 +2526,7 @@ public class UserInterface extends UserInterfaceImplBase {
 				throw new AdempiereException("Object Request Null");
 			}
 			org.spin.backend.grpc.user_interface.Callout.Builder calloutResponse = runcallout(request);
-			responseObserver.onNext(
-				calloutResponse.build()
-			);
+			responseObserver.onNext(calloutResponse.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
 			log.severe(e.getLocalizedMessage());
@@ -2600,13 +2562,15 @@ public class UserInterface extends UserInterfaceImplBase {
 			}
 
 			MField field = null;
-			Optional<MField> searchedValue = Arrays.asList(tab.getFields(false, null)).parallelStream()
-				.filter(searchField -> {
-					return searchField.getAD_Column().getColumnName().equals(request.getColumnName());
-				})
+			Optional<MField> searchedValue = Arrays.asList(tab.getFields(false, null)).stream()
+				.filter(searchField -> searchField.getAD_Column().getColumnName().equals(request.getColumnName()))
 				.findFirst();
 			if(searchedValue.isPresent()) {
 				field = searchedValue.get();
+			}
+			int tabNo = (tab.getSeqNo() / 10) - 1;
+			if(tabNo < 0) {
+				tabNo = 0;
 			}
 			//	window
 			int windowNo = request.getWindowNo();
@@ -2615,16 +2579,10 @@ public class UserInterface extends UserInterfaceImplBase {
 			}
 
 			// set values on Env.getCtx()
-			Map<String, Integer> displayTypeColumns = WindowUtil.getTabFieldsDisplayType(tab);
 			Map<String, Object> attributes = ValueManager.convertValuesMapToObjects(
-				request.getContextAttributes().getFieldsMap(),
-				displayTypeColumns
+				request.getContextAttributes().getFieldsMap()
 			);
-			ContextManager.setContextWithAttributesFromObjectMap(
-				windowNo,
-				Env.getCtx(),
-				attributes
-			);
+			ContextManager.setContextWithAttributesFromObjectMap(windowNo, Env.getCtx(), attributes);
 
 			//
 			Object oldValue = null;
@@ -2648,36 +2606,23 @@ public class UserInterface extends UserInterfaceImplBase {
 					request.getValue()
 				);
 			}
-
-			// TODO: Correct `tabNo` with get ASP Tabs List and isActive tab
-			int tabNo = (tab.getSeqNo() / 10) - 1;
-			if(tabNo < 0) {
-				tabNo = 0;
-			}
 			ContextManager.setTabContextByObject(Env.getCtx(), windowNo, tabNo, request.getColumnName(), value);
 
 			//	Initial load for callout wrapper
 			GridWindowVO gridWindowVo = GridWindowVO.create(Env.getCtx(), windowNo, tab.getAD_Window_ID());
 			GridWindow gridWindow = new GridWindow(gridWindowVo, true);
-			// gridWindow.initTab(tabNo); // TODO: Set more precise link column
 			GridTabVO gridTabVo = GridTabVO.create(gridWindowVo, tabNo, tab, false, true);
 			GridFieldVO gridFieldVo = GridFieldVO.create(Env.getCtx(), windowNo, tabNo, tab.getAD_Window_ID(), tab.getAD_Tab_ID(), false, field);
 			GridField gridField = new GridField(gridFieldVo);
-			//	Init tab
 			GridTab gridTab = new GridTab(gridTabVo, gridWindow, true);
-			gridTab.setLinkColumnName(null);
+			//	Init tab
 			gridTab.query(false);
 			gridTab.clearSelection();
 			gridTab.dataNew(false);
 
 			//	load values
 			for (Entry<String, Object> attribute : attributes.entrySet()) {
-				String columnNameEntity = attribute.getKey();
-				Object valueEntity = attribute.getValue();
-				gridTab.setValue(
-					columnNameEntity,
-					valueEntity
-				);
+				gridTab.setValue(attribute.getKey(), attribute.getValue());
 			}
 			gridTab.setValue(request.getColumnName(), value);
 
@@ -2688,11 +2633,8 @@ public class UserInterface extends UserInterfaceImplBase {
 			//	Run it
 			String result = processCallout(windowNo, gridTab, gridField);
 			Struct.Builder contextValues = Struct.newBuilder();
-			Arrays.asList(gridTab.getFields())
-				.stream()
-				.filter(fieldValue -> {
-					return CalloutLogic.isValidChange(fieldValue);
-				})
+			Arrays.asList(gridTab.getFields()).stream()
+				.filter(fieldValue -> isValidChange(fieldValue))
 				.forEach(fieldValue -> {
 					Value.Builder valueBuilder = ValueManager.getValueFromReference(
 						fieldValue.getValue(),
@@ -2705,7 +2647,7 @@ public class UserInterface extends UserInterfaceImplBase {
 				});
 
 			// always add is sales transaction on context
-			String isSalesTransaction = Env.getContext(Env.getCtx(), windowNo, "IsSOTrx", true);
+			String isSalesTransaction = Env.getContext(tab.getCtx(), windowNo, "IsSOTrx", true);
 			if (!Util.isEmpty(isSalesTransaction, true)) {
 				Value.Builder valueBuilder = ValueManager.getValueFromStringBoolean(isSalesTransaction);
 				contextValues.putFields(
@@ -2719,16 +2661,135 @@ public class UserInterface extends UserInterfaceImplBase {
 				.setValues(contextValues)
 			;
 
-			// TODO: Temporary Workaround
-			ContextTemporaryWorkaround.setAdditionalContext(
-				request.getCallout(),
-				windowNo,
-				calloutBuilder
-			);
+			setAdditionalContext(request.getCallout(), windowNo, calloutBuilder);
 		});
 		return calloutBuilder;
 	}
 
+	/**
+	 * Set additonal Env.getCtx() used by callouts
+	 * TODO: Remove this method on future
+	 * @param calloutClass
+	 * @param windowNo
+	 * @param calloutBuilder
+	 * @return
+	 */
+	private org.spin.backend.grpc.user_interface.Callout.Builder setAdditionalContext(String callouts, int windowNo,
+		org.spin.backend.grpc.user_interface.Callout.Builder calloutBuilder) {
+		if (Util.isEmpty(callouts, true)) {
+			return calloutBuilder;
+		}
+
+		Class<CalloutOrder> clazz = org.compiere.model.CalloutOrder.class;
+		String className = clazz.getName();
+
+		// separate `org.package.CalloutX.firstMethod; org.any.CalloutY.secondMethod`
+		List<String> calloutsList = Arrays.asList(callouts.split("\\s*(,|;)\\s*"));
+		calloutsList.forEach(calloutClass -> {
+			if (calloutClass.startsWith(className)) {
+				Struct.Builder contextValues = calloutBuilder.getValuesBuilder();
+				if (calloutClass.equals("org.compiere.model.CalloutOrder.docType")) {
+					// - OrderType
+					String docSubTypeSO = Env.getContext(Env.getCtx(), windowNo, "OrderType");
+					contextValues.putFields(
+						"OrderType",
+						ValueManager.getValueFromString(docSubTypeSO).build()
+					);
+
+					// - HasCharges
+					String hasCharges = Env.getContext(Env.getCtx(), windowNo, "HasCharges");
+					contextValues.putFields(
+						"HasCharges",
+						ValueManager.getValueFromStringBoolean(hasCharges).build()
+					);
+				}
+				else if (calloutClass.equals("org.compiere.model.CalloutOrder.priceList")) {
+					// - M_PriceList_Version_ID
+					int priceListVersionId = Env.getContextAsInt(Env.getCtx(), windowNo, "M_PriceList_Version_ID");
+					contextValues.putFields(
+						"M_PriceList_Version_ID",
+						ValueManager.getValueFromInteger(priceListVersionId).build()
+					);
+				}
+				else if (calloutClass.equals("org.compiere.model.CalloutOrder.product")) {
+					// - M_PriceList_Version_ID
+					int priceListVersionId = Env.getContextAsInt(Env.getCtx(), windowNo, "M_PriceList_Version_ID");
+					contextValues.putFields(
+						"M_PriceList_Version_ID",
+						ValueManager.getValueFromInteger(priceListVersionId).build()
+					);
+					
+					// - DiscountSchema
+					String isDiscountSchema = Env.getContext(Env.getCtx(), "DiscountSchema");
+					contextValues.putFields(
+						"DiscountSchema",
+						ValueManager.getValueFromStringBoolean(isDiscountSchema).build()
+					);
+				}
+				else if (calloutClass.equals("org.compiere.model.CalloutOrder.charge")) {
+					// - DiscountSchema
+					String isDiscountSchema = Env.getContext(Env.getCtx(), "DiscountSchema");
+					contextValues.putFields(
+						"DiscountSchema",
+						ValueManager.getValueFromStringBoolean(isDiscountSchema).build()
+					);
+				}
+				else if (calloutClass.equals("org.compiere.model.CalloutOrder.amt")) {
+					// - DiscountSchema
+					String isDiscountSchema = Env.getContext(Env.getCtx(), "DiscountSchema");
+					contextValues.putFields(
+						"DiscountSchema",
+						ValueManager.getValueFromStringBoolean(isDiscountSchema).build()
+					);
+				}
+				else if (calloutClass.equals("org.compiere.model.CalloutOrder.qty")) {
+					// - UOMConversion
+					String isConversion = Env.getContext(Env.getCtx(), "UOMConversion");
+					contextValues.putFields(
+						"UOMConversion",
+						ValueManager.getValueFromStringBoolean(isConversion).build()
+					);
+				}
+				calloutBuilder.setValues(contextValues);
+			}
+		});
+
+		return calloutBuilder;
+	}
+	
+	/**
+	 * Verify if a value has been changed
+	 * @param gridField
+	 * @return
+	 */
+	private boolean isValidChange(GridField gridField) {
+		//	Standard columns
+		if(gridField.getColumnName().equals(I_AD_Element.COLUMNNAME_Created) 
+				|| gridField.getColumnName().equals(I_AD_Element.COLUMNNAME_CreatedBy) 
+				|| gridField.getColumnName().equals(I_AD_Element.COLUMNNAME_Updated) 
+				|| gridField.getColumnName().equals(I_AD_Element.COLUMNNAME_UpdatedBy) 
+				|| gridField.getColumnName().equals(I_AD_Element.COLUMNNAME_UUID)) {
+			return false;
+		}
+		//	Oly Displayed
+		if(!gridField.isDisplayed()) {
+			return false;
+		}
+		//	Key
+		if(gridField.isKey()) {
+			return false;
+		}
+
+		//	validate with old value
+		if(gridField.getOldValue() != null
+				&& gridField.getValue() != null
+				&& gridField.getValue().equals(gridField.getOldValue())) {
+			return false;
+		}
+		//	Default
+		return true;
+	}
+	
 	/**
 	 * Process Callout
 	 * @param gridTab
@@ -2763,7 +2824,8 @@ public class UserInterface extends UserInterfaceImplBase {
 				}
 				if ( !  (rule.getEventType().equals(MRule.EVENTTYPE_Callout) 
 					  && rule.getRuleType().equals(MRule.RULETYPE_JSR223ScriptingAPIs))) {
-					retValue = "Callout " + cmd + " must be of type JSR 223 and event Callout"; 
+					retValue = "Callout " + cmd
+						+ " must be of type JSR 223 and event Callout"; 
 					log.log(Level.SEVERE, retValue);
 					return retValue;
 				}
@@ -2776,7 +2838,7 @@ public class UserInterface extends UserInterfaceImplBase {
 				// now add the callout parameters windowNo, tab, field, value, oldValue to the engine 
 				// Method arguments Env.getCtx() are A_
 				engine.put(MRule.ARGUMENTS_PREFIX + "WindowNo", windowNo);
-				engine.put(MRule.ARGUMENTS_PREFIX + "Tab", gridTab);
+				engine.put(MRule.ARGUMENTS_PREFIX + "Tab", this);
 				engine.put(MRule.ARGUMENTS_PREFIX + "Field", field);
 				engine.put(MRule.ARGUMENTS_PREFIX + "Value", value);
 				engine.put(MRule.ARGUMENTS_PREFIX + "OldValue", oldValue);
@@ -2818,7 +2880,8 @@ public class UserInterface extends UserInterfaceImplBase {
 					retValue = 	"Callout Invalid: " + e.toString();
 					return retValue;
 				}
-			}
+				
+			}			
 			if (!Util.isEmpty(retValue)) {	//	interrupt on first error
 				log.severe (retValue);
 				return retValue;
@@ -2850,7 +2913,7 @@ public class UserInterface extends UserInterfaceImplBase {
 
 	private ListEntitiesResponse.Builder listTabSequences(ListTabSequencesRequest request) {
 		if (request.getTabId() <= 0) {
-			throw new AdempiereException("@FillMandatory@ @AD_Tab_ID@");
+			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
 		}
 
 		// Fill context
@@ -2860,60 +2923,41 @@ public class UserInterface extends UserInterfaceImplBase {
 		);
 
 		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+		;
 		if (tab == null || tab.getAD_Tab_ID() <= 0) {
-			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
+			throw new AdempiereException("@AD_Tab_ID@ @No@ @Sequence@");
 		}
 		if (!tab.isSortTab()) {
-			throw new AdempiereException("@AD_Tab_ID@ @No@ @Sequence@: " + tab.getName());
+			throw new AdempiereException("@AD_Tab_ID@ @No@ @Sequence@");
 		}
 		String sortColumnName = MColumn.getColumnName(Env.getCtx(), tab.getAD_ColumnSortOrder_ID());
 		String includedColumnName = MColumn.getColumnName(Env.getCtx(), tab.getAD_ColumnSortYesNo_ID());
 
 		MTable table = MTable.get(Env.getCtx(), tab.getAD_Table_ID());
 		List<MColumn> columnsList = table.getColumnsAsList();
-		MColumn keyColumn = columnsList.parallelStream()
+		MColumn keyColumn = columnsList.stream()
 			.filter(column -> {
 				return column.isKey();
 			})
 			.findFirst()
 			.orElse(null);
-		if (keyColumn == null || keyColumn.getAD_Column_ID() <= 0) {
-			throw new AdempiereException("@KeyColumn@ @NotFound@");
-		}
 
-		String filterColumnName = request.getFilterColumnName();
-		if (Util.isEmpty(filterColumnName, true)) {
-			MColumn parentColumn = columnsList.parallelStream()
-				.filter(column -> {
-					return column.isParent();
-				})
-				.findFirst()
-				.orElse(null);
-			if (parentColumn != null && parentColumn.getAD_Column_ID() > 0) {
-				filterColumnName = parentColumn.getColumnName();
-			}
-		}
-		if (Util.isEmpty(filterColumnName, true)) {
-			throw new AdempiereException("@Parent_Column_ID@ @NotFound@");
-		}
+		MColumn parentColumn = columnsList.stream()
+			.filter(column -> {
+				return column.isParent();
+			})
+			.findFirst()
+			.orElse(null);
 
-		int filterRecordId = request.getFilterRecordId();
-		if (filterRecordId <= 0) {
-			// TODO: Support backward, remove in future versions
-			filterRecordId = Env.getContextAsInt(Env.getCtx(), windowNo, filterColumnName);
-		}
-		RecordUtil.validateRecordId(
-			filterRecordId,
-			table.getAccessLevel()
-		);
+		int parentRecordId = Env.getContextAsInt(Env.getCtx(), windowNo, parentColumn.getColumnName());
 
 		Query query = new Query(
 				Env.getCtx(),
 				table.getTableName(),
-				filterColumnName + " = ?",
+				parentColumn.getColumnName() + " = ?",
 				null
 			)
-			.setParameters(filterRecordId)
+			.setParameters(parentRecordId)
 			.setOrderBy(sortColumnName + " ASC")
 		;
 
@@ -3035,10 +3079,9 @@ public class UserInterface extends UserInterfaceImplBase {
 			.setRecordCount(request.getEntitiesList().size());
 
 		Trx.run(transacctionName -> {
-			request.getEntitiesList().forEach(entitySelection -> {
+			request.getEntitiesList().stream().forEach(entitySelection -> {
 				PO entity = RecordUtil.getEntity(
-					Env.getCtx(),
-					table.getTableName(),
+					Env.getCtx(), table.getTableName(),
 					entitySelection.getSelectionId(),
 					transacctionName
 				);
@@ -3046,11 +3089,11 @@ public class UserInterface extends UserInterfaceImplBase {
 					return;
 				}
 				// set new values
-				entitySelection.getValues().getFieldsMap().entrySet()
-					.forEach(attribute -> {
-						Object value = ValueManager.getObjectFromValue(attribute.getValue());
-						entity.set_ValueOfColumn(attribute.getKey(), value);
-					});
+				entitySelection.getValues().getFieldsMap().entrySet().forEach(attribute -> {
+					Object value = ValueManager.getObjectFromValue(attribute.getValue());
+					entity.set_ValueOfColumn(attribute.getKey(), value);
+
+				});
 				entity.saveEx(transacctionName);
 
 				Entity.Builder entityBuilder = Entity.newBuilder()
@@ -3178,7 +3221,6 @@ public class UserInterface extends UserInterfaceImplBase {
 		query
 			.setLimit(limit, offset)
 			.list(MMailText.class)
-			.parallelStream()
 			.forEach(requestRecord -> {
 				MailTemplate.Builder builder = convertMailTemplate(requestRecord);
 				builderList.addRecords(builder);

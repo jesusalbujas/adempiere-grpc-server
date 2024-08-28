@@ -116,10 +116,20 @@ public class Workflow extends WorkflowImplBase {
 			throw new AdempiereException("@FillMandatory@ @AD_Workflow_ID@");
 		}
 		Properties context = Env.getCtx();
-		MWorkflow workflow = MWorkflow.get(context, request.getId());
-		if (workflow == null || workflow.getAD_Workflow_ID() <= 0) {
-			throw new AdempiereException("@AD_Workflow_ID@ @NotFound@");
-		}
+		String whereClause = null;
+		Object parameter = null;
+		whereClause = MWorkflow.COLUMNNAME_AD_Workflow_ID + " = ?";
+		parameter = request.getId();
+		MWorkflow workflow = new Query(
+				context,
+				MWorkflow.Table_Name,
+				whereClause,
+				null
+			)
+			.setParameters(parameter)
+			.setOnlyActiveRecords(true)
+			.first()
+		;
 
 		//	Add to recent Item
 		DictionaryUtil.addToRecentItem(

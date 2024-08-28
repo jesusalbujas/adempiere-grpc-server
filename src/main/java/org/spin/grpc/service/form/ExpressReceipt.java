@@ -142,7 +142,7 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 			// .setApplyAccessFilter(MRole.SQL_FULLYQUALIFIED, MRole.SQL_RO)
 			.setParameters(parameters)
 		;
-
+		query.getSQL();
 		int count = query.count();
 		String nexPageToken = "";
 		int pageNumber = LimitUtil.getPageNumber(SessionManager.getSessionUuid(), request.getPageToken());
@@ -160,7 +160,6 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 
 		query.setLimit(limit, offset)
 			.getIDsAsList()
-			// .parallelStream()
 			.forEach(businessPartnerId -> {
 				MBPartner businessPartner = MBPartner.get(Env.getCtx(), businessPartnerId);
 				BusinessPartner.Builder builder = convertBusinessPartner(businessPartner);
@@ -282,7 +281,6 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 
 		query.setLimit(limit, offset)
 			.getIDsAsList()
-			// .parallelStream()
 			.forEach(purchaseOrderId -> {
 				MOrder purcharseOrder = new MOrder(context, purchaseOrderId, null);
 				PurchaseOrder.Builder builder = convertPurchaseOrder(
@@ -399,7 +397,6 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 
 		query.setLimit(limit, offset)
 			.getIDsAsList()
-			// .parallelStream()
 			.forEach(productId -> {
 				Product.Builder builder = convertProduct(productId);
 				builderList.addRecords(builder);
@@ -565,7 +562,7 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 				List<MOrderLine> orderLines = Arrays.asList(purchaseOrder.getLines());
 				orderLines.stream().forEach(purchaseOrderLine -> {
 					Optional<MInOutLine> maybeReceiptLine = Arrays.asList(maybeReceipt.get().getLines(true))
-						.parallelStream()
+						.stream()
 						.filter(shipmentLineTofind -> {
 							return shipmentLineTofind.getC_OrderLine_ID() == purchaseOrderLine.getC_OrderLine_ID();
 						})
@@ -776,7 +773,7 @@ public class ExpressReceipt extends ExpressReceiptImplBase {
 			}
 
 			Optional<MInOutLine> maybeReceiptLine = Arrays.asList(receipt.getLines(true))
-				.parallelStream()
+				.stream()
 				.filter(receiptLineTofind -> {
 					return receiptLineTofind.getC_OrderLine_ID() == purchaseOrderLine.getC_OrderLine_ID();
 				})

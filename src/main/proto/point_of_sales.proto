@@ -201,12 +201,7 @@ service Store {
 		};
 	}
 	rpc GetCustomer(GetCustomerRequest) returns (Customer) {
-		option (google.api.http) = {
-			get: "/point-of-sales/customers/{search_value}"
-			additional_bindings: {
-				get: "/point-of-sales/customers/id/{id}"
-			}
-		};
+		option (google.api.http) = { get: "/point-of-sales/customers/{search_value}" };
 	}
 	rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse) {
 		option (google.api.http) = { get: "/point-of-sales/customers" };
@@ -236,26 +231,13 @@ service Store {
 			body: "*"
 		};
 	}
-
 	// Bank
 	rpc ListBanks(ListBanksRequest) returns (ListBanksResponse) {
 		option (google.api.http) = { get: "/point-of-sales/{pos_id}/banks" };
 	}
-	rpc GetBank(GetBankRequest) returns (Bank) {
-		option (google.api.http) = { get: "/point-of-sales/{pos_id}/banks/{id}" };
-	}
 	rpc ListBankAccounts(ListBankAccountsRequest) returns (ListBankAccountsResponse) {
-		option (google.api.http) = { get: "/point-of-sales/{pos_id}/banks/{bank_id}/bank-accounts" };
+		option (google.api.http) = { get: "/point-of-sales/{pos_id}/bank-accounts" };
 	}
-	rpc GetBankAccount(GetBankAccountRequest) returns (Bank) {
-		option (google.api.http) = {
-			get: "/point-of-sales/{pos_id}/banks/{bank_id}/bank-accounts/{id}"
-			additional_bindings: {
-				get: "/point-of-sales/{pos_id}/banks/bank-accounts/{id}"
-			}
-		};
-	}
-
 	//	Create Customer Account
 	rpc CreateCustomerBankAccount(CreateCustomerBankAccountRequest) returns (CustomerBankAccount) {
 		option (google.api.http) = {
@@ -282,7 +264,6 @@ service Store {
 	rpc ListCustomerBankAccounts(ListCustomerBankAccountsRequest) returns (ListCustomerBankAccountsResponse) {
 		option (google.api.http) = { get: "/point-of-sales/{pos_id}/customers/{customer_id}/bank-accounts" };
 	}
-
 	//	shipment
 	//	Create Shipment
 	rpc CreateShipment(CreateShipmentRequest) returns (Shipment) {
@@ -795,15 +776,12 @@ message ShipmentLine {
 // Bank
 message Bank {
 	int32 id = 1;
-	string uuid = 2;
-	string name = 3;
-	string description = 4;
-	string routing_no = 5;
-	string swift_code = 6;
+	string name = 2;
+	string description = 3;
+	string routing_no = 4;
+	string swift_code = 5;
 }
-message GetBankRequest {
-	int32 id = 1;
-}
+
 message ListBanksRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -814,6 +792,7 @@ message ListBanksRequest {
 	string search_value = 7;
 	int32 pos_id = 8;
 }
+
 message ListBanksResponse {
 	int64 record_count = 1;
 	repeated Bank records = 2;
@@ -821,9 +800,6 @@ message ListBanksResponse {
 }
 
 // Bank Account
-message GetBankAccountRequest {
-	int32 id = 1;
-}
 message ListBankAccountsRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -835,6 +811,7 @@ message ListBankAccountsRequest {
 	int32 bank_id = 8;
 	int32 pos_id = 9;
 }
+
 message ListBankAccountsResponse {
 	int64 record_count = 1;
 	repeated core_functionality.BankAccount records = 2;
@@ -852,7 +829,6 @@ message ListCustomerBankAccountsRequest {
 	string search_value = 7;
 	int32 customer_id = 8;
 	int32 pos_id = 9;
-	int32 bank_id = 10;
 }
 
 //	List Customer Accounts Response
@@ -1071,15 +1047,13 @@ message UpdateCustomerRequest {
 
 // Request Get a Customer
 message GetCustomerRequest {
-	int32 id = 1;
-	string search_value = 2;
-	string value = 3;
-	string name = 4;
-	string contact_name = 5;
-	string email = 6;
-	string postal_code = 7;
-	string phone = 8;
-	int32 pos_id = 9;
+	string search_value = 1;
+	string value = 2;
+	string name = 3;
+	string contact_name = 4;
+	string email = 5;
+	string postal_code = 6;
+	string phone = 7;
 }
 
 // Customer
@@ -1110,7 +1084,6 @@ message ListCustomersRequest {
 	string email = 11;
 	string postal_code = 12;
 	string phone = 13;
-	int32 pos_id = 14;
 }
 
 message ListCustomersResponse {

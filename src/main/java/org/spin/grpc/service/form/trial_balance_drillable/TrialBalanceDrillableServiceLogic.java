@@ -74,11 +74,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -98,11 +97,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -126,11 +124,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -151,11 +148,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -178,11 +174,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -202,11 +197,10 @@ public class TrialBalanceDrillableServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;

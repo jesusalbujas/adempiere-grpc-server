@@ -23,6 +23,7 @@ import java.util.Properties;
 
 import org.adempiere.core.domains.models.I_AD_Element;
 import org.adempiere.core.domains.models.I_AD_Message;
+import org.adempiere.core.domains.models.I_AD_Window;
 import org.adempiere.model.MBrowse;
 import org.compiere.model.MColumn;
 import org.compiere.model.MField;
@@ -33,6 +34,7 @@ import org.compiere.model.MMessage;
 import org.compiere.model.MProcess;
 import org.compiere.model.MTable;
 import org.compiere.model.MValRule;
+import org.compiere.model.MWindow;
 import org.compiere.model.M_Element;
 import org.compiere.model.PO;
 import org.compiere.util.DisplayType;
@@ -49,10 +51,12 @@ import org.spin.backend.grpc.dictionary.MessageText;
 import org.spin.backend.grpc.dictionary.Process;
 import org.spin.backend.grpc.dictionary.Reference;
 import org.spin.backend.grpc.dictionary.SearchColumn;
+import org.spin.backend.grpc.dictionary.ZoomWindow;
 import org.spin.base.util.ContextManager;
 import org.spin.base.util.ReferenceUtil;
 import org.spin.model.MADContextInfo;
 import org.spin.service.grpc.util.value.ValueManager;
+import org.spin.util.ASPUtil;
 
 public class DictionaryConvertUtil {
 
@@ -64,7 +68,7 @@ public class DictionaryConvertUtil {
 	 */
 	public static PO translateEntity(PO entity) {
 		String language = entity.getCtx().getProperty(Env.LANGUAGE);
-		boolean isBaseLanguage = Env.isBaseLanguage(entity.getCtx(), "");
+		boolean isBaseLanguage = Env.isBaseLanguage(Env.getCtx(), "");
 		if(!isBaseLanguage) {
 			//	Name
 			String name = entity.get_Translation(I_AD_Element.COLUMNNAME_Name, language);
@@ -158,15 +162,74 @@ public class DictionaryConvertUtil {
 					info.TableName
 				)
 			)
+			.setKeyColumnName(
+				ValueManager.validateNull(
+					info.KeyColumn
+				)
+			)
+			.setDisplayColumnName(
+				ValueManager.validateNull(
+					info.DisplayColumn
+				)
+			)
 			.addAllContextColumnNames(
 				contextColumnsList
 			)
 		;
 
+		// reference value
+		if (info.AD_Reference_Value_ID > 0) {
+			builder.setId(info.AD_Reference_Value_ID);
+		}
+
+		//	Window Reference
+		if (info.ZoomWindow > 0) {
+			builder.addZoomWindows(
+				convertZoomWindow(context, info.ZoomWindow).build()
+			);
+		}
+		// window reference Purchase Order
+		if (info.ZoomWindowPO > 0) {
+			builder.addZoomWindows(
+				convertZoomWindow(context, info.ZoomWindowPO).build()
+			);
+		}
 		//	Return
 		return builder;
 	}
 
+
+
+	/**
+	 * Convert Zoom Window from ID
+	 * @param windowId
+	 * @return
+	 */
+	public static ZoomWindow.Builder convertZoomWindow(Properties context, int windowId) {
+		MWindow window = ASPUtil.getInstance(context).getWindow(windowId); // new MWindow(context, windowId, null);
+		//	Get translation
+		String name = null;
+		String description = null;
+		String language = Env.getAD_Language(context);
+		if (!Util.isEmpty(language, true)) {
+			name = window.get_Translation(I_AD_Window.COLUMNNAME_Name, language);
+			description = window.get_Translation(I_AD_Window.COLUMNNAME_Description, language);
+		}
+		//	Validate for default
+		if (Util.isEmpty(name, true)) {
+			name = window.getName();
+		}
+		if (Util.isEmpty(description, true)) {
+			description = window.getDescription();
+		}
+		//	Return
+		return ZoomWindow.newBuilder()
+			.setId(window.getAD_Window_ID())
+			.setName(ValueManager.validateNull(name))
+			.setDescription(ValueManager.validateNull(description))
+			.setIsSalesTransaction(window.isSOTrx())
+		;
+	}
 
 
 	/**
@@ -180,10 +243,38 @@ public class DictionaryConvertUtil {
 			return builder;
 		}
 		MADContextInfo contextInfoValue = MADContextInfo.getById(context, contextInfoId);
-		if (contextInfoValue == null) {
-			return builder;
+		MMessage message = MMessage.get(context, contextInfoValue.getAD_Message_ID());
+		//	Get translation
+		String msgText = null;
+		String msgTip = null;
+		String language = Env.getAD_Language(context);
+		if(!Util.isEmpty(language)) {
+			msgText = message.get_Translation(I_AD_Message.COLUMNNAME_MsgText, language);
+			msgTip = message.get_Translation(I_AD_Message.COLUMNNAME_MsgTip, language);
 		}
-
+		//	Validate for default
+		if(Util.isEmpty(msgText)) {
+			msgText = message.getMsgText();
+		}
+		if(Util.isEmpty(msgTip)) {
+			msgTip = message.getMsgTip();
+		}
+		//	Add message text
+		MessageText.Builder messageText = MessageText.newBuilder();
+		if (message != null) {
+			messageText
+				.setId(message.getAD_Message_ID())
+				.setValue(
+					ValueManager.validateNull(message.getValue())
+				)
+				.setMessageText(
+					ValueManager.validateNull(msgText)
+				)
+				.setMessageTip(
+					ValueManager.validateNull(msgTip)
+				)
+			;
+		}
 		builder = ContextInfo.newBuilder()
 			.setId(contextInfoValue.getAD_ContextInfo_ID())
 			.setUuid(
@@ -195,36 +286,11 @@ public class DictionaryConvertUtil {
 			.setDescription(
 				ValueManager.validateNull(contextInfoValue.getDescription())
 			)
+			.setMessageText(messageText.build())
 			.setSqlStatement(
 				ValueManager.validateNull(contextInfoValue.getSQLStatement())
 			)
 		;
-
-		MMessage message = MMessage.get(context, contextInfoValue.getAD_Message_ID());
-		//	Add message text
-		if (message != null && message.getAD_Message_ID() > 0) {//	Get translation
-			MessageText.Builder messageText = MessageText.newBuilder()
-				.setId(message.getAD_Message_ID())
-				.setValue(
-					ValueManager.validateNull(
-						message.getValue()
-					)
-				)
-				.setMessageText(
-					ValueManager.validateNull(
-						message.get_Translation(I_AD_Message.COLUMNNAME_MsgText)
-					)
-				)
-				.setMessageTip(
-					ValueManager.validateNull(
-						message.get_Translation(I_AD_Message.COLUMNNAME_MsgTip)
-					)
-				)
-			;
-			builder.setMessageText(
-				messageText.build()
-			);
-		}
 		return builder;
 	}
 
@@ -262,6 +328,7 @@ public class DictionaryConvertUtil {
 					ValueManager.getTranslation(form, MForm.COLUMNNAME_Help)
 				)
 			)
+			.setIsActive(form.isActive())
 		;
 		//	File Name
 		String fileName = form.getClassname();
@@ -336,9 +403,11 @@ public class DictionaryConvertUtil {
 			.setCallout(
 				ValueManager.validateNull(column.getCallout())
 			)
+			.setColumnId(column.getAD_Column_ID())
 			.setColumnName(
 				ValueManager.validateNull(column.getColumnName())
 			)
+			.setElementId(element.getAD_Element_ID())
 			.setElementName(
 				ValueManager.validateNull(element.getColumnName())
 			)
@@ -379,6 +448,7 @@ public class DictionaryConvertUtil {
 				ValueManager.validateNull(column.getValueMin())
 			)
 			.setFieldLength(column.getFieldLength())
+			.setIsActive(column.isActive())
 			.addAllContextColumnNames(
 				ContextManager.getContextColumnNames(
 					Optional.ofNullable(column.getDefaultValue()).orElse("")
@@ -428,15 +498,12 @@ public class DictionaryConvertUtil {
 
 		String parentColumnName = column.getColumnName();
 
-		MTable table = MTable.get(column.getCtx(), column.getAD_Table_ID());
+		MTable table = MTable.get(Env.getCtx(), column.getAD_Table_ID());
 		List<MColumn> columnsList = table.getColumnsAsList(false);
-		if (columnsList == null || columnsList.isEmpty()) {
-			return depenentFieldsList;
-		}
 
 		columnsList.stream()
 			.filter(currentColumn -> {
-				if(currentColumn == null || !currentColumn.isActive()) {
+				if(!currentColumn.isActive()) {
 					return false;
 				}
 				// Default Value
@@ -453,7 +520,7 @@ public class DictionaryConvertUtil {
 				}
 				// Dynamic Validation
 				if (currentColumn.getAD_Val_Rule_ID() > 0) {
-					MValRule validationRule = MValRule.get(currentColumn.getCtx(), currentColumn.getAD_Val_Rule_ID());
+					MValRule validationRule = MValRule.get(Env.getCtx(), currentColumn.getAD_Val_Rule_ID());
 					if (ContextManager.isUseParentColumnOnContext(parentColumnName, validationRule.getCode())) {
 						return true;
 					}
@@ -462,15 +529,15 @@ public class DictionaryConvertUtil {
 			})
 			.forEach(currentColumn -> {
 				DependentField.Builder builder = DependentField.newBuilder()
-					.setParentId(
+					.setContainerId(
 						table.getAD_Table_ID()
 					)
-					.setParentUuid(
+					.setContainerUuid(
 						ValueManager.validateNull(
 							table.getUUID()
 						)
 					)
-					.setParentName(
+					.setContainerName(
 						table.getTableName()
 					)
 					.setId(
@@ -533,11 +600,13 @@ public class DictionaryConvertUtil {
 			.setColumnName(
 				ValueManager.validateNull(element.getColumnName())
 			)
+			.setElementId(element.getAD_Element_ID())
 			.setElementName(
 				ValueManager.validateNull(element.getColumnName())
 			)
 			.setDisplayType(displayTypeId)
 			.setFieldLength(element.getFieldLength())
+			.setIsActive(element.isActive())
 		;
 		//	
 		if (ReferenceUtil.validateReference(displayTypeId)) {
@@ -573,14 +642,14 @@ public class DictionaryConvertUtil {
 		if (field == null || field.getAD_Field_ID() <= 0) {
 			return builder;
 		}
-		MColumn column = MColumn.get(field.getCtx(), field.getAD_Column_ID());
+		MColumn column = MColumn.get(Env.getCtx(), field.getAD_Column_ID());
 		int displayTypeId = column.getAD_Reference_ID();
 		if (field.getAD_Reference_ID() > 0) {
 			displayTypeId = field.getAD_Reference_ID();
 		}
 		String name = ValueManager.validateNull(
 			Msg.translate(
-				field.getCtx(),
+				Env.getCtx(),
 				column.getColumnName()
 			)
 		);
@@ -621,7 +690,7 @@ public class DictionaryConvertUtil {
 			.setName(
 				ValueManager.validateNull(
 					Msg.translate(
-						column.getCtx(),
+						Env.getCtx(),
 						column.getColumnName()
 					)
 				)

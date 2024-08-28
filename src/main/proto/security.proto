@@ -44,10 +44,8 @@ service Security {
 		option (google.api.http) = { get: "/security/user-info" };
 	}
 	// Request Menu from Parent
-	rpc GetMenu(MenuRequest) returns (MenuResponse) {
-		option (google.api.http) = {
-			get: "/security/menus"
-		};
+	rpc GetMenu(MenuRequest) returns (Menu) {
+		option (google.api.http) = { get: "/security/menu" };
 	}
 	// Request change role
 	rpc RunChangeRole(ChangeRoleRequest) returns (Session) {
@@ -66,7 +64,6 @@ service Security {
 			body: "*"
 		};
 	}
-
 	// List Roles
 	rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
 		option (google.api.http) = { get: "/security/roles" };
@@ -79,7 +76,6 @@ service Security {
 	rpc ListWarehouses(ListWarehousesRequest) returns (ListWarehousesResponse) {
 		option (google.api.http) = { get: "/security/warehouses" };
 	}
-
 	// List Available Services
 	rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
 		option (google.api.http) = { get: "/security/services" };
@@ -89,13 +85,6 @@ service Security {
 		option (google.api.http) = {
 			post: "/security/login-open-id",
 			body: "*"
-		};
-	}
-
-	//	Validate dictionary access
-	rpc GetDictionaryAccess(GetDictionaryAccessRequest) returns (GetDictionaryAccessResponse) {
-		option (google.api.http) = {
-			get: "/security/dictionary/{dictionary_type}/{id}"
 		};
 	}
 }
@@ -140,38 +129,39 @@ message ChangeRoleRequest {
 message UserInfoRequest {
 }
 
+// Request Menu
+message MenuRequest {
+}
+
 // User information
 message UserInfo {
 	int32 id = 1;
-	string uuid = 2;
-	string value = 3;
-	string name = 4;
-	string description = 5;
-	string comments = 6;
-	string image = 7;
-	int64 connection_timeout = 8;
+	string name = 2;
+	string description = 3;
+	string comments = 4;
+	string image = 5;
+	int64 connection_timeout = 6;
 }
 
 
-// Session Info
+// SessionInfo
 message SessionInfo {
 	int32 id = 1;
-	string uuid = 2;
-	string name = 3;
-	UserInfo user_info = 4;
-	Role role = 5;
-	bool processed = 6;
-	string language = 7;
-	int32 country_id = 8;
-	string country_code = 9;
-	string country_name = 10;
-	string display_sequence = 11;
-	string currency_name = 12;
-	string currency_iso_code = 13;
-	string currency_symbol = 14;
-	int32 standard_precision = 15;
-	int32 costing_precision = 16;
-	google.protobuf.Struct default_context = 17;
+	string name = 2;
+	UserInfo user_info = 3;
+	Role role = 4;
+	bool processed = 5;
+	string language = 6;
+	int32 country_id = 7;
+	string country_code = 8;
+	string country_name = 9;
+	string display_sequence = 10;
+	string currency_name = 11;
+	string currency_iso_code = 12;
+	string currency_symbol = 13;
+	int32 standard_precision = 14;
+	int32 costing_precision = 15;
+	google.protobuf.Struct default_context = 16;
 }
 
 message SetSessionAttributeRequest {
@@ -181,42 +171,41 @@ message SetSessionAttributeRequest {
 
 message Client {
 	int32 id = 1;
-	string uuid = 2;
-	string name = 3;
-	string description = 4;
-	string logo = 5;
-	string logo_report = 6;
-	string logo_web = 7;
+	string name = 2;
+	string description = 3;
+	string logo = 4;
+	string logo_report = 5;
+	string logo_web = 6;
 }
 
 // Role
 message Role {
 	int32 id = 1;
-	string uuid = 2;
-	string name = 3;
-	string description = 4;
-	Client client = 5;
-	bool is_can_report = 6;
-	bool is_can_export = 7;
-	bool is_personal_lock = 8;
-	bool is_personal_access = 9;
-	bool is_allow_info_account = 10;
-	bool is_allow_info_business_partner = 11;
-	bool is_allow_info_in_out = 12;
-	bool is_allow_info_order = 13;
-	bool is_allow_info_product = 14;
-	bool is_allow_info_schedule = 15;
-	bool is_allow_info_mrp = 16;
-	bool is_allow_html_view = 17;
-	bool is_allow_info_asset = 18;
-	bool is_allow_info_cash_journal = 19;
-	bool is_allow_info_invoice = 20;
-	bool is_allow_info_payment = 21;
-	bool is_allow_info_resource = 22;
-	bool is_allow_info_crp = 23;
-	bool is_allow_xls_view = 24;
-	bool is_show_accounting = 25;
+	string name = 2;
+	string description = 3;
+	Client client = 4;
+	bool is_can_report = 5;
+	bool is_can_export = 6;
+	bool is_personal_lock = 7;
+	bool is_personal_access = 8;
+	bool is_allow_info_account = 9;
+	bool is_allow_info_business_partner = 10;
+	bool is_allow_info_in_out = 11;
+	bool is_allow_info_order = 12;
+	bool is_allow_info_product = 13;
+	bool is_allow_info_schedule = 14;
+	bool is_allow_info_mrp = 15;
+	bool is_allow_html_view = 16;
+	bool is_allow_info_asset = 17;
+	bool is_allow_info_cash_journal = 18;
+	bool is_allow_info_invoice = 19;
+	bool is_allow_info_payment = 20;
+	bool is_allow_info_resource = 21;
+	bool is_allow_info_crp = 22;
+	bool is_allow_xls_view = 23;
+	bool is_show_accounting = 24;
 }
+
 message ListRolesRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -226,6 +215,7 @@ message ListRolesRequest {
 	string page_token = 6;
 	string search_value = 7;
 }
+
 message ListRolesResponse {
 	int64 record_count = 1;
 	repeated Role roles = 2;
@@ -236,23 +226,23 @@ message ListRolesResponse {
 // Organization
 message Organization {
 	int32 id = 1;
-	string uuid = 2;
-	string value = 3;
-	string name = 4;
-	string description = 5;
-	bool is_read_only = 6;
-	string duns = 7;
-	string tax_id = 8;
-	string phone = 9;
-	string phone2 = 10;
-	string fax = 11;
-	string corporate_branding_image = 12;
+	string name = 2;
+	string description = 3;
+	bool is_read_only = 4;
+	string duns = 5;
+	string tax_id = 6;
+	string phone = 7;
+	string phone2 = 8;
+	string fax = 9;
+	string corporate_branding_image = 10;
 }
+
 message ListOrganizationsResponse {
 	int64 record_count = 1;
 	repeated Organization organizations = 2;
 	string next_page_token = 4;
 }
+
 message ListOrganizationsRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -268,16 +258,16 @@ message ListOrganizationsRequest {
 // Warehouse
 message Warehouse {
 	int32 id = 1;
-	string uuid = 2;
-	string value = 3;
-	string name = 4;
-	string description = 5;
+	string name = 2;
+	string description = 3;
 }
+
 message ListWarehousesResponse {
 	int64 record_count = 1;
 	repeated Warehouse warehouses = 2;
 	string next_page_token = 3;
 }
+
 message ListWarehousesRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -308,27 +298,19 @@ message Menu {
 	string sequence = 4;
 	string name = 5;
 	string description = 6;
-	bool is_summary = 7;
-	bool is_sales_transaction = 8;
-	bool is_read_only = 9;
+	bool is_active = 7;
+	bool is_summary = 8;
+	bool is_sales_transaction = 9;
+	bool is_read_only = 10;
+	string action = 11;
 	// Supported References
-	optional string action = 10;
-	optional int32 action_id = 11;
-	optional string action_uuid = 12;
-	optional DictionaryEntity window = 13;
-	optional DictionaryEntity process = 14;
-	optional DictionaryEntity form = 15;
-	optional DictionaryEntity browser = 16;
-	optional DictionaryEntity workflow = 17;
-	// Tree menu childs
-	repeated Menu children = 18;
+	DictionaryEntity window = 12;
+	DictionaryEntity process = 13;
+	DictionaryEntity form = 14;
+	DictionaryEntity browse = 15;
+	DictionaryEntity workflow = 16;
+	repeated Menu children = 17;
 }
-message MenuRequest {
-}
-message MenuResponse {
-	repeated Menu menus = 1;
-}
-
 
 //	Open ID
 message ListServicesRequest {
@@ -356,21 +338,4 @@ message LoginOpenIDRequest {
 	string state_parameter = 2;
 	string language = 3;
 	string client_version = 4;
-}
-
-enum DictionaryType {
-	UNKNOW = 0;
-	MENU = 1;
-	WINDOW = 2;
-	PROCESS = 3;
-	BROWSER = 4;
-	FORM = 5;
-}
-message GetDictionaryAccessRequest {
-	DictionaryType dictionary_type = 1;
-	int32 id = 2;
-}
-message GetDictionaryAccessResponse {
-	bool is_access = 1;
-	string message = 2;
 }

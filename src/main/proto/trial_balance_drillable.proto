@@ -73,8 +73,6 @@ message ListOrganizationsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 message ListBudgetsRequest {
@@ -85,8 +83,6 @@ message ListBudgetsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 message ListUser1Request {
@@ -97,8 +93,6 @@ message ListUser1Request {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 message ListPeriodsRequest {
@@ -109,8 +103,6 @@ message ListPeriodsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 message ListAccoutingKeysRequest {
@@ -121,8 +113,6 @@ message ListAccoutingKeysRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 message ListReportCubesRequest {
@@ -133,8 +123,6 @@ message ListReportCubesRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 

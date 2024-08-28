@@ -60,8 +60,8 @@ public class LocationAddressLogic {
 		);
 		if (!Util.isEmpty(searchValue, true)) {
 			whereClause = "("
-				+ "UPPER(CountryCode) LIKE '%' || UPPER(?) || '%' "
-				+ "OR UPPER(Name) LIKE '%' || UPPER(?) || '%' "
+				+ "UPPER(CountryCode) = UPPER(?) "
+				+ "OR UPPER(Name) = UPPER(?) "
 				+ ")"
 			;
 			parameters.add(searchValue);
@@ -83,7 +83,7 @@ public class LocationAddressLogic {
 		;
 
 		String sessionLanguage = Env.getAD_Language(Env.getCtx());
-		final boolean isBaseLangague = Language.isBaseLanguage(sessionLanguage);
+		boolean isBaseLangague = Language.isBaseLanguage(sessionLanguage);
 		query.getIDsAsList().forEach(countryId -> {
 			MCountry country = MCountry.get(Env.getCtx(), countryId);
 			String name = country.getName();
@@ -143,7 +143,12 @@ public class LocationAddressLogic {
 			request.getSearchValue()
 		);
 		if (!Util.isEmpty(searchValue, true)) {
-			whereClause = "AND UPPER(Name) LIKE '%' || UPPER(?) || '%' ";
+			whereClause = "AND ("
+				+ "UPPER(CountryCode) = UPPER(?) "
+				+ "OR UPPER(Name) = UPPER(?) "
+				+ ")"
+			;
+			parameters.add(searchValue);
 			parameters.add(searchValue);
 		}
 		Query query = new Query(
@@ -160,20 +165,18 @@ public class LocationAddressLogic {
 			.setRecordCount(query.count())
 		;
 
-		query.getIDsAsList()
-			.parallelStream()
-			.forEach(regionId -> {
-				MRegion region = MRegion.get(Env.getCtx(), regionId);
-				ListItem.Builder regionItem = ListItem.newBuilder()
-					.setId(region.getC_Region_ID())
-					.setName(
-						ValueManager.validateNull(
-							region.getName()
-						)
+		query.getIDsAsList().forEach(regionId -> {
+			MRegion region = MRegion.get(Env.getCtx(), regionId);
+			ListItem.Builder regionItem = ListItem.newBuilder()
+				.setId(region.getC_Region_ID())
+				.setName(
+					ValueManager.validateNull(
+						region.getName()
 					)
-				;
-				builder.addRegions(regionItem);
-			});
+				)
+			;
+			builder.addRegions(regionItem);
+		});
 
 		return builder;
 	}
@@ -203,7 +206,12 @@ public class LocationAddressLogic {
 			request.getSearchValue()
 		);
 		if (!Util.isEmpty(searchValue, true)) {
-			whereClause += "AND UPPER(Name) LIKE '%' || UPPER(?) || '%' ";
+			whereClause += "AND ("
+				+ "UPPER(CountryCode) = UPPER(?) "
+				+ "OR UPPER(Name) = UPPER(?) "
+				+ ")"
+			;
+			parameters.add(searchValue);
 			parameters.add(searchValue);
 		}
 		Query query = new Query(
@@ -220,20 +228,18 @@ public class LocationAddressLogic {
 			.setRecordCount(query.count())
 		;
 
-		query.getIDsAsList()
-			.parallelStream()
-			.forEach(cityId -> {
-				MCity city = MCity.get(Env.getCtx(), cityId);
-				ListItem.Builder cityItem = ListItem.newBuilder()
-					.setId(city.getC_City_ID())
-					.setName(
-						ValueManager.validateNull(
-							city.getName()
-						)
+		query.getIDsAsList().forEach(cityId -> {
+			MCity city = MCity.get(Env.getCtx(), cityId);
+			ListItem.Builder cityItem = ListItem.newBuilder()
+				.setId(city.getC_City_ID())
+				.setName(
+					ValueManager.validateNull(
+						city.getName()
 					)
-				;
-				builder.addCities(cityItem);
-			});
+				)
+			;
+			builder.addCities(cityItem);
+		});
 
 		return builder;
 	}
@@ -244,7 +250,7 @@ public class LocationAddressLogic {
 			throw new AdempiereException("@FillMandatory@ @C_Location_ID@");
 		}
 		MLocation address = MLocation.get(Env.getCtx(), addressId, null);
-		if (address == null || address.getC_Location_ID() <= 0) {
+		if (address == null || address.getC_Country_ID() <= 0) {
 			throw new AdempiereException("@C_Location_ID@ @NotFound@");
 		}
 		return address;
@@ -318,11 +324,11 @@ public class LocationAddressLogic {
 			);
 			address.setLongitude(longitude);
 		}
-		if (!Util.isEmpty(request.getAltitude(), true)) {
-			BigDecimal altitude = NumberManager.getBigDecimalFromString(
-				request.getAltitude()
+		if (!Util.isEmpty(request.getLatitude(), true)) {
+			BigDecimal latitude = NumberManager.getBigDecimalFromString(
+				request.getLatitude()
 			);
-			address.setAltitude(altitude);
+			address.setLatitude(latitude);
 		}
 
 		address.saveEx();
@@ -399,10 +405,7 @@ public class LocationAddressLogic {
 
 
 	public static Address.Builder getAddress(GetAddressRequest request) {
-		MLocation address = validateAndGetAddress(
-			request.getId()
-		);
-
+		MLocation address = validateAndGetAddress(request.getId());
 		Address.Builder builder = LocationAddressConvertUtil.convertAddress(
 			address
 		);

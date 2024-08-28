@@ -31,12 +31,14 @@ import org.compiere.model.MTable;
 import org.compiere.model.MValRule;
 import org.compiere.model.MWindow;
 import org.compiere.util.DisplayType;
+import org.compiere.util.Env;
 import org.compiere.util.Util;
 import org.spin.backend.grpc.dictionary.Browser;
 import org.spin.backend.grpc.dictionary.DependentField;
-import org.spin.backend.grpc.dictionary.DictionaryEntity;
 import org.spin.backend.grpc.dictionary.Field;
+import org.spin.backend.grpc.dictionary.Process;
 import org.spin.backend.grpc.dictionary.Reference;
+import org.spin.backend.grpc.dictionary.Window;
 import org.spin.base.db.QueryUtil;
 import org.spin.base.util.ContextManager;
 import org.spin.base.util.ReferenceUtil;
@@ -68,10 +70,8 @@ public class BrowseConverUtil {
 			.setUuid(
 				ValueManager.validateNull(browser.getUUID())
 			)
-			.setCode(
-				ValueManager.validateNull(
-					browser.getValue()
-				)
+			.setValue(
+				ValueManager.validateNull(browser.getValue())
 			)
 			.setName(browser.getName())
 			.setDescription(
@@ -81,6 +81,7 @@ public class BrowseConverUtil {
 				ValueManager.validateNull(browser.getHelp())
 			)
 			.setAccessLevel(Integer.parseInt(browser.getAccessLevel()))
+			.setIsActive(browser.isActive())
 			.setIsCollapsibleByDefault(browser.isCollapsibleByDefault())
 			.setIsDeleteable(browser.isDeleteable())
 			.setIsExecutedQueryByDefault(browser.isExecutedQueryByDefault())
@@ -106,9 +107,13 @@ public class BrowseConverUtil {
 				)
 			);
 		}
+		//	Set View UUID
+		if(browser.getAD_View_ID() > 0) {
+			builder.setViewId(browser.getAD_View_ID());
+		}
 		// set table name
 		if (browser.getAD_Table_ID() > 0) {
-			MTable table = MTable.get(browser.getCtx(), browser.getAD_Table_ID());
+			MTable table = MTable.get(Env.getCtx(), browser.getAD_Table_ID());
 			builder.setTableName(
 				ValueManager.validateNull(table.getTableName())
 			);
@@ -116,26 +121,25 @@ public class BrowseConverUtil {
 		//	Window Reference
 		if(browser.getAD_Window_ID() > 0) {
 			MWindow window = ASPUtil.getInstance(context).getWindow(browser.getAD_Window_ID());
-			DictionaryEntity.Builder windowBuilder = DictionaryConvertUtil.getDictionaryEntity(
-				window
+			Window.Builder windowBuilder = WindowConvertUtil.convertWindow(
+				context,
+				window,
+				false
 			);
 			builder.setWindow(windowBuilder.build());
 		}
 		//	Process Reference
 		if(browser.getAD_Process_ID() > 0) {
-			MProcess process = ASPUtil.getInstance(context).getProcess(browser.getAD_Process_ID());
-			DictionaryEntity.Builder processBuilder = DictionaryConvertUtil.getDictionaryEntity(
-				process
+			Process.Builder processBuilder = ProcessConvertUtil.convertProcess(
+				context,
+				MProcess.get(context, browser.getAD_Process_ID()),
+				false
 			);
 			builder.setProcess(processBuilder.build());
 		}
 		//	For parameters
 		if(withFields) {
-			List<MBrowseField> browseFields = ASPUtil.getInstance(context).getBrowseFields(browser.getAD_Browse_ID());
-			for(MBrowseField field : browseFields) {
-				if (field == null) {
-					continue;
-				}
+			for(MBrowseField field : ASPUtil.getInstance(context).getBrowseFields(browser.getAD_Browse_ID())) {
 				Field.Builder fieldBuilder = BrowseConverUtil.convertBrowseField(
 					context,
 					field
@@ -213,6 +217,7 @@ public class BrowseConverUtil {
 			.setVFormat(
 				ValueManager.validateNull(browseField.getVFormat())
 			)
+			.setIsActive(browseField.isActive())
 			.setCallout(
 				ValueManager.validateNull(browseField.getCallout())
 			)
@@ -225,22 +230,23 @@ public class BrowseConverUtil {
 			)
 		;
 		
+		String elementName = null;
 		MViewColumn viewColumn = MViewColumn.getById(context, browseField.getAD_View_Column_ID(), null);
 		builder.setColumnName(
 			ValueManager.validateNull(viewColumn.getColumnName())
 		);
-		String elementName = null;
 		if(viewColumn.getAD_Column_ID() != 0) {
 			MColumn column = MColumn.get(context, viewColumn.getAD_Column_ID());
 			elementName = column.getColumnName();
+			builder.setColumnId(column.getAD_Column_ID());
 		}
 
 		//	Default element
 		if(Util.isEmpty(elementName)) {
 			elementName = browseField.getAD_Element().getColumnName();
 		}
-		builder.setElementName(
-			ValueManager.validateNull(elementName))
+		builder.setElementName(ValueManager.validateNull(elementName))
+			.setElementId(browseField.getAD_Element_ID())
 		;
 
 		//	
@@ -303,16 +309,13 @@ public class BrowseConverUtil {
 
 	public static List<DependentField> generateDependentBrowseFields(MBrowseField browseField) {
 		List<DependentField> depenentFieldsList = new ArrayList<>();
-		if (browseField == null) {
-			return depenentFieldsList;
-		}
 
-		MViewColumn viewColumn = MViewColumn.getById(browseField.getCtx(), browseField.getAD_View_Column_ID(), null);
+		MViewColumn viewColumn = MViewColumn.getById(Env.getCtx(), browseField.getAD_View_Column_ID(), null);
 		String parentColumnName = viewColumn.getColumnName();
 
 		String elementName = null;
 		if(viewColumn.getAD_Column_ID() != 0) {
-			MColumn column = MColumn.get(browseField.getCtx(), viewColumn.getAD_Column_ID());
+			MColumn column = MColumn.get(Env.getCtx(), viewColumn.getAD_Column_ID());
 			elementName = column.getColumnName();
 		}
 		if(Util.isEmpty(elementName, true)) {
@@ -322,13 +325,10 @@ public class BrowseConverUtil {
 
 		MBrowse browse = ASPUtil.getInstance().getBrowse(browseField.getAD_Browse_ID());
 		List<MBrowseField> browseFieldsList = ASPUtil.getInstance().getBrowseFields(browseField.getAD_Browse_ID());
-		if (browseFieldsList == null || browseFieldsList.isEmpty()) {
-			return depenentFieldsList;
-		}
 
 		browseFieldsList.stream()
 			.filter(currentBrowseField -> {
-				if(currentBrowseField == null || !currentBrowseField.isActive()) {
+				if(!currentBrowseField.isActive()) {
 					return false;
 				}
 				// Display Logic
@@ -353,7 +353,7 @@ public class BrowseConverUtil {
 				}
 				// Dynamic Validation
 				if (currentBrowseField.getAD_Val_Rule_ID() > 0) {
-					MValRule validationRule = MValRule.get(currentBrowseField.getCtx(), currentBrowseField.getAD_Val_Rule_ID());
+					MValRule validationRule = MValRule.get(Env.getCtx(), currentBrowseField.getAD_Val_Rule_ID());
 					if (ContextManager.isUseParentColumnOnContext(parentColumnName, validationRule.getCode())
 						|| ContextManager.isUseParentColumnOnContext(parentElementName, validationRule.getCode())) {
 						return true;
@@ -363,15 +363,15 @@ public class BrowseConverUtil {
 			})
 			.forEach(currentBrowseField -> {
 				DependentField.Builder builder = DependentField.newBuilder()
-					.setParentId(
+					.setContainerId(
 						browse.getAD_Browse_ID()
 					)
-					.setParentUuid(
+					.setContainerUuid(
 						ValueManager.validateNull(
 							browse.getUUID()
 						)
 					)
-					.setParentName(
+					.setContainerName(
 						ValueManager.validateNull(
 							browse.getName()
 						)
@@ -386,7 +386,7 @@ public class BrowseConverUtil {
 					)
 				;
 
-				MViewColumn currentViewColumn = MViewColumn.getById(currentBrowseField.getCtx(), currentBrowseField.getAD_View_Column_ID(), null);
+				MViewColumn currentViewColumn = MViewColumn.getById(Env.getCtx(), currentBrowseField.getAD_View_Column_ID(), null);
 				builder.setColumnName(currentViewColumn.getColumnName());
 
 				depenentFieldsList.add(builder.build());
