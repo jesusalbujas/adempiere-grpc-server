@@ -281,7 +281,7 @@ public class LogsConvertUtil {
 			} else if (column.getAD_Reference_ID() == DisplayType.YesNo) {
 				if (oldValue != null) {
 					boolean yes = BooleanManager.getBooleanFromString(oldValue);
-					displayOldValue = BooleanManager.getBooleanToString(yes, true).toString();
+					displayOldValue = String.valueOf(BooleanManager.getBooleanToString(yes, true));
 				}
 				if (newValue != null) {
 					boolean yes = newValue.equals("true") || newValue.equals("Y");
