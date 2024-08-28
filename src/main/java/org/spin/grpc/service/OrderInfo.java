@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.adempiere.exceptions.AdempiereException;
-import org.adempiere.core.domains.models.I_M_InOut;
+import org.adempiere.core.domains.models.I_C_Order;
 import org.compiere.model.MLookupInfo;
 import org.compiere.model.MRole;
 import org.compiere.model.MTable;
@@ -36,8 +36,8 @@ import org.spin.service.grpc.util.db.CountUtil;
 import org.spin.service.grpc.util.db.LimitUtil;
 import org.spin.service.grpc.util.value.ValueManager;
 import org.spin.backend.grpc.common.ListEntitiesResponse;
-import org.spin.backend.grpc.inout.InOutGrpc.InOutImplBase;
-import org.spin.backend.grpc.inout.ListInOutInfoRequest;
+import org.spin.backend.grpc.order.ListOrderInfoRequest;
+import org.spin.backend.grpc.order.OrderGrpc.OrderImplBase;
 
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -46,20 +46,20 @@ import io.grpc.stub.StreamObserver;
  * @author Edwin Betancourt, EdwinBetanc0urt@outlook.com, https://github.com/EdwinBetanc0urt
  * Service for backend of Update Center
  */
-public class InOutInfo extends InOutImplBase {
+public class OrderInfo extends OrderImplBase {
 	/**	Logger			*/
-	private CLogger log = CLogger.getCLogger(InOutInfo.class);
+	private CLogger log = CLogger.getCLogger(OrderInfo.class);
 	
-	public String tableName = I_M_InOut.Table_Name;
+	public String tableName = I_C_Order.Table_Name;
 
 	@Override
-	public void listInOutInfo(ListInOutInfoRequest request, StreamObserver<ListEntitiesResponse> responseObserver) {
+	public void listOrderInfo(ListOrderInfoRequest request, StreamObserver<ListEntitiesResponse> responseObserver) {
 		try {
 			if(request == null) {
 				throw new AdempiereException("Object Request Null");
 			}
 
-			ListEntitiesResponse.Builder entityValueList = listInOutInfo(request);
+			ListEntitiesResponse.Builder entityValueList = listOrderInfo(request);
 			responseObserver.onNext(entityValueList.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
@@ -76,7 +76,7 @@ public class InOutInfo extends InOutImplBase {
 	 * @param request
 	 * @return
 	 */
-	private ListEntitiesResponse.Builder listInOutInfo(ListInOutInfoRequest request) {
+	private ListEntitiesResponse.Builder listOrderInfo(ListOrderInfoRequest request) {
 		MLookupInfo reference = ReferenceInfo.getInfoFromRequest(
 			request.getReferenceId(),
 			request.getFieldId(),
@@ -95,7 +95,7 @@ public class InOutInfo extends InOutImplBase {
 		StringBuilder sql = new StringBuilder(QueryUtil.getTableQueryWithReferences(table));
 
 		// add where with access restriction
-		String sqlWithRoleAccess = MRole.getDefault(Env.getCtx(), false)
+		String sqlWithRoleAccess = MRole.getDefault()
 			.addAccessSQL(
 				sql.toString(),
 				null,
@@ -149,9 +149,10 @@ public class InOutInfo extends InOutImplBase {
 		if(LimitUtil.isValidNextPageToken(count, offset, limit)) {
 			nexPageToken = LimitUtil.getPagePrefix(SessionManager.getSessionUuid()) + (pageNumber + 1);
 		}
-		//	Set next page
-		builder.setNextPageToken(ValueManager.validateNull(nexPageToken));
-
+		builder.setNextPageToken(
+			ValueManager.validateNull(nexPageToken)
+		);
+		
 		return builder;
 	}
 

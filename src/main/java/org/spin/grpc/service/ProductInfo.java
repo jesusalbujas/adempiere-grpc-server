@@ -7,19 +7,18 @@
  * (at your option) any later version.                                              *
  * This program is distributed in the hope that it will be useful,                  *
  * but WITHOUT ANY WARRANTY; without even the implied warranty of                   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the                     *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the                     *
  * GNU General Public License for more details.                                     *
  * You should have received a copy of the GNU General Public License                *
  * along with this program. If not, see <https://www.gnu.org/licenses/>.            *
  ************************************************************************************/
 package org.spin.grpc.service;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.adempiere.exceptions.AdempiereException;
-import org.adempiere.core.domains.models.I_M_InOut;
+import org.adempiere.core.domains.models.I_M_Product;
 import org.compiere.model.MLookupInfo;
 import org.compiere.model.MRole;
 import org.compiere.model.MTable;
@@ -36,8 +35,8 @@ import org.spin.service.grpc.util.db.CountUtil;
 import org.spin.service.grpc.util.db.LimitUtil;
 import org.spin.service.grpc.util.value.ValueManager;
 import org.spin.backend.grpc.common.ListEntitiesResponse;
-import org.spin.backend.grpc.inout.InOutGrpc.InOutImplBase;
-import org.spin.backend.grpc.inout.ListInOutInfoRequest;
+import org.spin.backend.grpc.product.ListProductInfoRequest;
+import org.spin.backend.grpc.product.ProductGrpc.ProductImplBase;
 
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -46,24 +45,21 @@ import io.grpc.stub.StreamObserver;
  * @author Edwin Betancourt, EdwinBetanc0urt@outlook.com, https://github.com/EdwinBetanc0urt
  * Service for backend of Update Center
  */
-public class InOutInfo extends InOutImplBase {
+public class ProductInfo extends ProductImplBase {
 	/**	Logger			*/
-	private CLogger log = CLogger.getCLogger(InOutInfo.class);
+	private CLogger log = CLogger.getCLogger(ProductInfo.class);
 	
-	public String tableName = I_M_InOut.Table_Name;
+	public String tableName = I_M_Product.Table_Name;
 
 	@Override
-	public void listInOutInfo(ListInOutInfoRequest request, StreamObserver<ListEntitiesResponse> responseObserver) {
+	public void listProductInfo(ListProductInfoRequest request, StreamObserver<ListEntitiesResponse> responseObserver) {
 		try {
-			if(request == null) {
-				throw new AdempiereException("Object Request Null");
-			}
-
-			ListEntitiesResponse.Builder entityValueList = listInOutInfo(request);
+			ListEntitiesResponse.Builder entityValueList = listProductInfo(request);
 			responseObserver.onNext(entityValueList.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
 			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
 			responseObserver.onError(Status.INTERNAL
 				.withDescription(e.getLocalizedMessage())
 				.withCause(e)
@@ -76,7 +72,7 @@ public class InOutInfo extends InOutImplBase {
 	 * @param request
 	 * @return
 	 */
-	private ListEntitiesResponse.Builder listInOutInfo(ListInOutInfoRequest request) {
+	private ListEntitiesResponse.Builder listProductInfo( ListProductInfoRequest request) {
 		MLookupInfo reference = ReferenceInfo.getInfoFromRequest(
 			request.getReferenceId(),
 			request.getFieldId(),
@@ -128,7 +124,7 @@ public class InOutInfo extends InOutImplBase {
 
 		sqlWithRoleAccess += whereClause;
 		String parsedSQL = RecordUtil.addSearchValueAndGet(sqlWithRoleAccess, this.tableName, request.getSearchValue(), params);
-
+		
 		//	Get page and count
 		int pageNumber = LimitUtil.getPageNumber(SessionManager.getSessionUuid(), request.getPageToken());
 		int limit = LimitUtil.getPageSize(request.getPageSize());
@@ -149,8 +145,9 @@ public class InOutInfo extends InOutImplBase {
 		if(LimitUtil.isValidNextPageToken(count, offset, limit)) {
 			nexPageToken = LimitUtil.getPagePrefix(SessionManager.getSessionUuid()) + (pageNumber + 1);
 		}
-		//	Set next page
-		builder.setNextPageToken(ValueManager.validateNull(nexPageToken));
+		builder.setNextPageToken(
+			ValueManager.validateNull(nexPageToken)
+		);
 
 		return builder;
 	}

@@ -28,6 +28,7 @@ import org.compiere.model.MProcessPara;
 import org.compiere.model.MProcessParaCustom;
 import org.compiere.model.MReportView;
 import org.compiere.model.MValRule;
+import org.compiere.util.Env;
 import org.compiere.wf.MWorkflow;
 import org.spin.backend.grpc.dictionary.DependentField;
 import org.spin.backend.grpc.dictionary.Field;
@@ -43,20 +44,7 @@ import org.spin.util.AbstractExportFormat;
 import org.spin.util.ReportExportHandler;
 
 public class ProcessConvertUtil {
-
-	/**
-	 * Convert process to builder
-	 * @param processId
-	 * @return
-	 */
-	public static Process.Builder convertProcess(Properties context, int processId, boolean withParams) {
-		if (processId <= 0) {
-			return Process.newBuilder();
-		}
-		MProcess process = MProcess.get(context, processId);
-		return convertProcess(context, process, withParams);
-	}
-
+	
 	/**
 	 * Convert process to builder
 	 * @param process
@@ -80,7 +68,7 @@ public class ProcessConvertUtil {
 					process.getUUID()
 				)
 			)
-			.setCode(
+			.setValue(
 				ValueManager.validateNull(
 					process.getValue()
 				)
@@ -114,7 +102,7 @@ public class ProcessConvertUtil {
 			builder.setBrowserId(
 					process.getAD_Browse_ID()
 				)
-				.setBrowser(
+				.setBrowse(
 					DictionaryConvertUtil.getDictionaryEntity(
 						browse
 					)
@@ -146,11 +134,6 @@ public class ProcessConvertUtil {
 
 		//	Report Types
 		if(process.isReport()) {
-			if (process.getAD_PrintFormat_ID() > 0) {
-				builder.setPrintFormatId(
-					process.getAD_PrintFormat_ID()
-				);
-			}
 			MReportView reportView = null;
 			if(process.getAD_ReportView_ID() > 0) {
 				builder.setReportViewId(
@@ -158,7 +141,12 @@ public class ProcessConvertUtil {
 				);
 				reportView = MReportView.get(context, process.getAD_ReportView_ID());
 			}
-			ReportExportHandler exportHandler = new ReportExportHandler(context, reportView);
+			if (process.getAD_PrintFormat_ID() > 0) {
+				builder.setPrintFormatId(
+					process.getAD_PrintFormat_ID()
+				);
+			}
+			ReportExportHandler exportHandler = new ReportExportHandler(Env.getCtx(), reportView);
 			for(AbstractExportFormat reportType : exportHandler.getExportFormatList()) {
 				ReportExportType.Builder reportExportType = ReportExportType.newBuilder()
 					.setName(
@@ -177,9 +165,6 @@ public class ProcessConvertUtil {
 		//	For parameters
 		if(withParams && parametersList != null && parametersList.size() > 0) {
 			for(MProcessPara parameter : parametersList) {
-				if (parameter == null) {
-					continue;
-				}
 				Field.Builder fieldBuilder = ProcessConvertUtil.convertProcessParameter(
 					context,
 					parameter
@@ -207,21 +192,15 @@ public class ProcessConvertUtil {
 
 	public static List<DependentField> generateDependentProcessParameters(MProcessPara processParameter) {
 		List<DependentField> depenentFieldsList = new ArrayList<>();
-		if (processParameter == null) {
-			return depenentFieldsList;
-		}
 
 		String parentColumnName = processParameter.getColumnName();
 
 		MProcess process = ASPUtil.getInstance().getProcess(processParameter.getAD_Process_ID());
 		List<MProcessPara> parametersList = ASPUtil.getInstance().getProcessParameters(processParameter.getAD_Process_ID());
-		if (parametersList == null || parametersList.isEmpty()) {
-			return depenentFieldsList;
-		}
 
-		parametersList.parallelStream()
+		parametersList.stream()
 			.filter(currentParameter -> {
-				if (currentParameter == null || !currentParameter.isActive()) {
+				if (!currentParameter.isActive()) {
 					return false;
 				}
 				// Display Logic
@@ -238,7 +217,7 @@ public class ProcessConvertUtil {
 				}
 				// Dynamic Validation
 				if (currentParameter.getAD_Val_Rule_ID() > 0) {
-					MValRule validationRule = MValRule.get(currentParameter.getCtx(), currentParameter.getAD_Val_Rule_ID());
+					MValRule validationRule = MValRule.get(Env.getCtx(), currentParameter.getAD_Val_Rule_ID());
 					if (ContextManager.isUseParentColumnOnContext(parentColumnName, validationRule.getCode())) {
 						return true;
 					}
@@ -247,15 +226,15 @@ public class ProcessConvertUtil {
 			})
 			.forEach(currentParameter -> {
 				DependentField.Builder builder = DependentField.newBuilder()
-					.setParentId(
+					.setContainerId(
 						process.getAD_Process_ID()
 					)
-					.setParentUuid(
+					.setContainerUuid(
 						ValueManager.validateNull(
 							process.getUUID()
 						)
 					)
-					.setParentName(
+					.setContainerName(
 						ValueManager.validateNull(
 							process.getName()
 						)
@@ -344,6 +323,7 @@ public class ProcessConvertUtil {
 				ValueManager.validateNull(processParameter.getVFormat())
 			)
 			.setFieldLength(processParameter.getFieldLength())
+			.setIsActive(processParameter.isActive())
 			.addAllContextColumnNames(
 				ContextManager.getContextColumnNames(
 					Optional.ofNullable(processParameter.getDefaultValue()).orElse("")

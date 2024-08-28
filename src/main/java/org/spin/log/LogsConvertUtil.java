@@ -60,6 +60,7 @@ import org.spin.backend.grpc.logs.ChangeLog;
 import org.spin.backend.grpc.logs.EntityEventType;
 import org.spin.backend.grpc.logs.EntityLog;
 import org.spin.service.grpc.util.value.BooleanManager;
+import org.spin.service.grpc.util.value.TimeManager;
 import org.spin.service.grpc.util.value.ValueManager;
 
 import com.google.protobuf.Struct;
@@ -159,7 +160,7 @@ public class LogsConvertUtil {
 	 */
 	public static List<EntityLog.Builder> convertRecordLog(List<MChangeLog> recordLogList) {
 		Map<Integer, EntityLog.Builder> indexMap = new HashMap<Integer, EntityLog.Builder>();
-		recordLogList.parallelStream()
+		recordLogList.stream()
 			.filter(recordLog -> {
 				return !indexMap.containsKey(recordLog.getAD_ChangeLog_ID());
 			})
@@ -170,7 +171,7 @@ public class LogsConvertUtil {
 				indexMap.put(recordLog.getAD_ChangeLog_ID(), convertRecordLogHeader(recordLog));
 			});
 		//	convert changes
-		recordLogList.parallelStream().forEach(recordLog -> {
+		recordLogList.forEach(recordLog -> {
 			ChangeLog.Builder changeLog = convertChangeLog(recordLog);
 			EntityLog.Builder recordLogBuilder = indexMap.get(recordLog.getAD_ChangeLog_ID());
 			recordLogBuilder.addChangeLogs(changeLog);
@@ -183,11 +184,11 @@ public class LogsConvertUtil {
 			// 		.reversed()
 			// )
 			.sorted((log1, log2) -> {
-				Timestamp from = ValueManager.getDateFromTimestampDate(
+				Timestamp from = TimeManager.convertValueToDate(
 					log1.getLogDate()
 				);
 
-				Timestamp to = ValueManager.getDateFromTimestampDate(
+				Timestamp to = TimeManager.convertValueToDate(
 					log2.getLogDate()
 				);
 
@@ -279,10 +280,12 @@ public class LogsConvertUtil {
 				;
 			} else if (column.getAD_Reference_ID() == DisplayType.YesNo) {
 				if (oldValue != null) {
-					displayOldValue = BooleanManager.getBooleanToTranslated(oldValue);
+					boolean yes = BooleanManager.getBooleanFromString(oldValue);
+					displayOldValue = BooleanManager.getBooleanToString(yes, true);
 				}
 				if (newValue != null) {
-					displayNewValue = BooleanManager.getBooleanToTranslated(newValue);
+					boolean yes = newValue.equals("true") || newValue.equals("Y");
+					displayNewValue = Msg.getMsg(Env.getCtx(), yes ? "Y" : "N");
 				}
 			} else if (column.getAD_Reference_ID() == DisplayType.Amount) {
 				if (oldValue != null)

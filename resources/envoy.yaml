@@ -12,15 +12,7 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
           stat_prefix: grpc_json
-          access_log:
-          - name: envoy.access_loggers.stdout
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
           codec_type: AUTO
-          stream_idle_timeout: 900s
-          # common_http_protocol_options:
-          #   headers_with_underscores_action: REJECT_REQUEST
-          #   idle_timeout: 900s
           route_config:
             name: local_route
             virtual_hosts:
@@ -35,7 +27,7 @@ static_resources:
                 }
                 route: {
                   cluster: grpc,
-                  timeout: 900s # 0s to disable timeout
+                  timeout: 60s
                 }
           http_filters:
           - name: envoy.filters.http.grpc_json_transcoder
@@ -46,42 +38,36 @@ static_resources:
                 # package.service
                 - bank_statement_match.BankStatementMatch
                 - data.BusinessData
-                - core_functionality.CoreFunctionality
+                - data.CoreFunctionality
                 - dashboarding.Dashboarding
                 - dictionary.Dictionary
                 - enrollment.Register
                 - express_movement.ExpressMovement
                 - express_receipt.ExpressReceipt
                 - express_shipment.ExpressShipment
-                - field.FieldManagementService
                 - field.business_partner.BusinessPartnerInfoService
-                - field.invoice.InvoiceInfoService
-                - field.payment.PaymentInfoService
-                - field.order.OrderInfoService
-                - field.product.ProductInfoService
                 - file_management.FileManagement
                 - general_ledger.GeneralLedger
                 - import_file_loader.ImportFileLoader
                 - in_out.InOut
+                - invoice.Invoice
                 - issue_management.IssueManagement
                 - location_address.LocationAddress
                 - logs.Logs
                 - match_po_receipt_invoice.MatchPORReceiptInvoice
                 - material_management.MaterialManagement
-                - notice_management.NoticeManagement
-                - send_notifications.SendNotifications
+                - order.Order
                 - payment_allocation.PaymentAllocation
                 - payment_print_export.PaymentPrintExport
                 - payment.Payment
                 - payroll_action_notice.PayrollActionNotice
                 - data.Store
+                - product.Product
                 - record_management.RecordManagement
                 - report_management.ReportManagement
                 - security.Security
-                - task_management.TaskManagement
                 - time_control.TimeControl
                 - time_record.TimeRecord
-                - trial_balance_drillable.TrialBalanceDrillable
                 - updates.UpdateCenter
                 - user_customization.UserCustomization
                 - user_interface.UserInterface

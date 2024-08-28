@@ -117,7 +117,7 @@ public class ImportFileLoaderServiceLogic {
 			request.getSearchValue()
 		);
 		if (!Util.isEmpty(searchValue, true)) {
-			charsetsList = charsetsList.parallelStream().filter(charset -> {
+			charsetsList = charsetsList.stream().filter(charset -> {
 				return charset.name().toLowerCase().contains(
 					searchValue.toLowerCase()
 				);
@@ -125,7 +125,7 @@ public class ImportFileLoaderServiceLogic {
 			.collect(Collectors.toList());
 		}
 
-		charsetsList.parallelStream().forEach(charset -> {
+		charsetsList.stream().forEach(charset -> {
 			Value.Builder value = ValueManager.getValueFromString(
 				charset.name()
 			);
@@ -191,11 +191,10 @@ public class ImportFileLoaderServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;
@@ -219,11 +218,10 @@ public class ImportFileLoaderServiceLogic {
 
 		ListLookupItemsResponse.Builder builderList = UserInterface.listLookupItems(
 			reference,
-			request.getContextAttributes(),
+			null,
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue(),
-			request.getIsOnlyActiveRecords()
+			request.getSearchValue()
 		);
 
 		return builderList;

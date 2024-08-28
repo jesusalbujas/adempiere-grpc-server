@@ -98,7 +98,7 @@ public class BankManagement {
 			.getIDsAsList()
 		;
 
-		banksIdsList.parallelStream().forEach(tableId -> {
+		banksIdsList.forEach(tableId -> {
 			Bank.Builder accountingDocument = POSConvertUtil.convertBank(tableId);
 			builderList.addRecords(accountingDocument);
 		});

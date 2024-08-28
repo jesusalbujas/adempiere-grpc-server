@@ -78,7 +78,6 @@ message ListPayrollProcessRequest {
 	string page_token = 6;
 	string search_value = 7;
 	string context_attributes = 8;
-	bool is_only_active_records = 9;
 }
 
 // List Employees Request
@@ -91,9 +90,7 @@ message ListValidEmployeesRequest {
 	string page_token = 6;
 	string search_value = 7;
 	string context_attributes = 8;
-	bool is_only_active_records = 9;
-	// custom filters
-	int32 payroll_process_id = 10;
+	int32 payroll_process_id = 9;
 }
 
 // List Payroll Conceps Request
@@ -106,10 +103,8 @@ message ListPayrollConceptsRequest {
 	string page_token = 6;
 	string search_value = 7;
 	string context_attributes = 8;
-	bool is_only_active_records = 9;
-	// custom filters
-	int32 payroll_process_id = 10;
-	int32 business_partner_id = 11;
+	int32 payroll_process_id = 9;
+	int32 business_partner_id = 10;
 }
 
 // Get Payroll Concept Definition Request

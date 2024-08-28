@@ -279,7 +279,6 @@ public class ExpressShipment extends ExpressShipmentImplBase {
 
 		query.setLimit(limit, offset)
 			.getIDsAsList()
-			// .parallelStream()
 			.forEach(salesOrderId -> {
 				MOrder salesOrder = new MOrder(context, salesOrderId, null);
 				SalesOrder.Builder builder = convertSalesOrder(salesOrder);
@@ -555,7 +554,7 @@ public class ExpressShipment extends ExpressShipmentImplBase {
 				List<MOrderLine> orderLines = Arrays.asList(salesOrder.getLines());
 				orderLines.stream().forEach(salesOrderLine -> {
 					Optional<MInOutLine> maybeShipmentLine = Arrays.asList(maybeShipment.get().getLines(true))
-						.parallelStream()
+						.stream()
 						.filter(shipmentLineTofind -> {
 							return shipmentLineTofind.getC_OrderLine_ID() == salesOrderLine.getC_OrderLine_ID();
 						})
@@ -765,7 +764,7 @@ public class ExpressShipment extends ExpressShipmentImplBase {
 			}
 
 			Optional<MInOutLine> maybeShipmentLine = Arrays.asList(shipment.getLines(true))
-				.parallelStream()
+				.stream()
 				.filter(shipmentLineTofind -> {
 					return shipmentLineTofind.getC_OrderLine_ID() == salesOrderLine.getC_OrderLine_ID();
 				})

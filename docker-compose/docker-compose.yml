@@ -39,6 +39,7 @@ services:
     environment:
       DB_HOST: ${POSTGRES_NAME}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      SERVICES_ENABLED: ${SERVICES_ENABLED}
     depends_on:
       adempiere.db:
         condition: service_healthy

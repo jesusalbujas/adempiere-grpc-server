@@ -68,8 +68,7 @@ public class UserInterfaceLogic {
 			request.getBrowseFieldId(),
 			request.getColumnId(),
 			request.getColumnName(),
-			request.getTableName(),
-			request.getIsWithoutValidation()
+			request.getTableName()
 		);
 
 		final MTable table = RecordUtil.validateAndGetTable(
@@ -83,16 +82,9 @@ public class UserInterfaceLogic {
 
 		//
 		StringBuilder sql = new StringBuilder(QueryUtil.getTableQueryWithReferences(table));
-
-		// validate is active record
 		if (request.getIsOnlyActiveRecords()) {
-			if (table.getColumn("IsActive") != null) {
-				String newSQL = WhereClauseUtil.addIsActiveRestriction(
-					reference.TableName,
-					sql.toString()
-				);
-				sql = new StringBuilder(newSQL);
-			}
+			String newSQL = WhereClauseUtil.addIsActiveRestriction(reference.TableName, sql.toString());
+			sql = new StringBuilder(newSQL);
 		}
 
 		// add where with access restriction
@@ -107,18 +99,16 @@ public class UserInterfaceLogic {
 		StringBuffer whereClause = new StringBuffer();
 
 		// validation code of field
-		if (!request.getIsWithoutValidation()) {
-			String validationCode = WhereClauseUtil.getWhereRestrictionsWithAlias(
-				table.getTableName(),
-				reference.ValidationCode
-			);
-			if (!Util.isEmpty(reference.ValidationCode, true)) {
-				String parsedValidationCode = Env.parseContext(Env.getCtx(), windowNo, validationCode, false);
-				if (Util.isEmpty(parsedValidationCode, true)) {
-					throw new AdempiereException("@WhereClause@ @Unparseable@");
-				}
-				whereClause.append(" AND ").append(parsedValidationCode);
+		String validationCode = WhereClauseUtil.getWhereRestrictionsWithAlias(
+			table.getTableName(),
+			reference.ValidationCode
+		);
+		String parsedValidationCode = Env.parseContext(Env.getCtx(), windowNo, validationCode, false);
+		if (!Util.isEmpty(reference.ValidationCode, true)) {
+			if (Util.isEmpty(parsedValidationCode, true)) {
+				throw new AdempiereException("@WhereClause@ @Unparseable@");
 			}
+			whereClause.append(" AND ").append(parsedValidationCode);
 		}
 
 		//	For dynamic condition

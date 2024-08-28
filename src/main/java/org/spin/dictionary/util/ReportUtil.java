@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.compiere.model.MProcessPara;
 import org.compiere.model.MQuery;
@@ -35,8 +34,8 @@ import org.compiere.print.ReportEngine;
 import org.compiere.util.Env;
 import org.compiere.util.Util;
 import org.spin.base.db.WhereClauseUtil;
-import org.spin.service.grpc.util.query.Filter;
-import org.spin.service.grpc.util.query.FilterManager;
+import org.spin.base.query.Filter;
+import org.spin.base.query.FilterManager;
 import org.spin.util.ASPUtil;
 import org.spin.util.AbstractExportFormat;
 import org.spin.util.ReportExportHandler;
@@ -68,19 +67,13 @@ public class ReportUtil {
 		for (MProcessPara paramerter : reportParameters) {
 			parametersMap.put(paramerter.getColumnName(), paramerter);
 		}
-		List<Filter> conditions = FilterManager.newInstance(filters).getConditions()
-			.parallelStream()
-			.filter(condition -> {
-				return !Util.isEmpty(condition.getColumnName(), true);
-			})
-			.collect(Collectors.toList())
-		;
-
-		// TODO: Add 1=1 to remove `if (whereClause.length() > 0)` and change stream with parallelStream
+		List<Filter> conditions = FilterManager.newInstance(filters).getConditions();
 		StringBuilder whereClause = new StringBuilder();
 		HashMap<String, String> rangeAdd = new HashMap<>();
 
-		conditions.forEach(condition -> {
+		conditions.stream()
+		.filter(condition -> !Util.isEmpty(condition.getColumnName()))
+		.forEach(condition -> {
 			String columnName = condition.getColumnName();
 			MProcessPara reportParameter = parametersMap.get(columnName);
 			if (reportParameter == null && columnName.endsWith("_To")) {
@@ -93,11 +86,7 @@ public class ReportUtil {
 			if (rangeAdd.containsKey(reportParameter.getColumnName())) {
 				return;
 			}
-			String restriction = WhereClauseUtil.getRestrictionByOperatorWithoutParameters(
-				table.getTableName(),
-				condition,
-				reportParameter.getAD_Reference_ID()
-			);
+			String restriction = WhereClauseUtil.getRestrictionByOperator(condition, reportParameter.getAD_Reference_ID());
 
 			if (whereClause.length() > 0) {
 				whereClause.append(" AND ");
