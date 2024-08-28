@@ -249,6 +249,7 @@ public class Security extends SecurityImplBase {
 		MRole role = MRole.get(context, currentSession.getAD_Role_ID());
 
 		// Session values
+		boolean isOpenID = false;
 		Session.Builder builder = Session.newBuilder();
 		final String bearerToken = SessionManager.createSessionAndGetToken(
 			currentSession.getWebSession(),
@@ -256,7 +257,8 @@ public class Security extends SecurityImplBase {
 			role.getAD_Role_ID(),
 			userId,
 			currentSession.getAD_Org_ID(),
-			warehouseId
+			warehouseId,
+			isOpenID
 		);
 
 		// Update session preferences
@@ -821,7 +823,7 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSessionAndGetToken(clientVersion, language, roleId, userId, organizationId, warehouseId);
+			final String bearerToken = SessionManager.createSessionAndGetToken(clientVersion, language, roleId, userId, organizationId, warehouseId, isOpenID);
 			builder.setToken(bearerToken);
 			//	Return session
 			return builder;
