@@ -72,12 +72,20 @@ service GeneralLedger {
 	rpc ListAccountingDocuments(ListAccountingDocumentsRequest) returns (ListAccountingDocumentsResponse) {
 		option (google.api.http) = { get: "/general-ledger/accounts/documents" };
 	}
+	rpc ExistsAccoutingDocument(ExistsAccoutingDocumentRequest) returns (ExistsAccoutingDocumentResponse) {
+		option (google.api.http) = { get: "/general-ledger/accounts/facts/{accounting_schema_id}/document/{table_name}/{record_id}/exists" };
+	}
 	rpc ListAccountingFacts(ListAccountingFactsRequest) returns (data.ListEntitiesResponse) {
-		option (google.api.http) = { get: "/general-ledger/accounts/facts" };
+		option (google.api.http) = {
+			get: "/general-ledger/accounts/facts/{accounting_schema_id}"
+			additional_bindings: {
+				get: "/general-ledger/accounts/facts/{accounting_schema_id}/document/{table_name}/{record_id}"
+			}
+		};
 	}
 	rpc StartRePost(StartRePostRequest) returns (StartRePostResponse) {
 		option (google.api.http) = {
-			post: "/general-ledger/re-post",
+			post: "/general-ledger/accounts/facts/{table_name}/{record_id}",
 			body: "*"
 		};
 	}
@@ -105,7 +113,7 @@ message ListAccoutingElementsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	google.protobuf.Struct context_attributes = 8;
+	string context_attributes = 8;
 	int32 accouting_schema_id = 9;
 }
 
@@ -130,8 +138,10 @@ message ListAccoutingElementValuesRequest {
 	string page_token = 6;
 	string search_value = 7;
 	string context_attributes = 8;
-	int32 accouting_schema_id = 9;
-	string element_type = 10;
+	bool is_only_active_records = 9;
+	// Custom Filters
+	int32 accouting_schema_id = 10;
+	string element_type = 11;
 }
 
 message ListAccoutingElementValuesResponse {
@@ -155,13 +165,21 @@ message ListAccountingCombinationsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
-	google.protobuf.Struct context_attributes = 8;
+	// custom filters
+	string context_attributes = 8;
+	int32 organization_id = 9;
+	int32 account_id = 10;
 }
 
 message SaveAccountingCombinationRequest {
-	google.protobuf.Struct context_attributes = 2;
-	int32 id = 4;
-	google.protobuf.Struct attributes = 5;
+	int32 id = 1;
+	int32 client_id = 2;
+	int32 accounting_schema_id = 3;
+	int32 organization_id = 4;
+	int32 account_id = 5;
+	string alias = 6;
+	google.protobuf.Struct context_attributes = 7;
+	google.protobuf.Struct attributes = 8;
 }
 
 
@@ -174,6 +192,8 @@ message ListAccountingSchemasRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
+	string context_attributes = 8;
+	bool is_only_active_records = 9;
 }
 
 // Posting Type
@@ -185,6 +205,8 @@ message ListPostingTypesRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
+	string context_attributes = 8;
+	bool is_only_active_records = 9;
 }
 
 // Accounting Document
@@ -219,9 +241,22 @@ message ListOrganizationsRequest {
 	int32 page_size = 5;
 	string page_token = 6;
 	string search_value = 7;
+	string context_attributes = 8;
+	bool is_only_active_records = 9;
 }
 
 // Accounting Fact
+message ExistsAccoutingDocumentRequest {
+	// mandatory filters
+	int32 accounting_schema_id = 1;
+	// document filters
+	string table_name = 2;
+	int32 record_id = 3;
+}
+message ExistsAccoutingDocumentResponse {
+	bool is_show_accouting = 1;
+}
+
 message ListAccountingFactsRequest {
 	string filters = 1;
 	string sort_by = 2;
@@ -249,7 +284,6 @@ message StartRePostRequest {
 	int32 record_id = 2;
 	bool is_force = 3;
 }
-
 message StartRePostResponse {
-	string error_msg = 4;
+	string error_msg = 1;
 }

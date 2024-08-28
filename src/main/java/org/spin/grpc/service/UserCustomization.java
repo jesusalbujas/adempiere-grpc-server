@@ -17,6 +17,7 @@ package org.spin.grpc.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.adempiere.core.domains.models.I_AD_Browse_Field;
 import org.adempiere.core.domains.models.I_AD_Field;
@@ -67,6 +68,7 @@ import org.spin.backend.grpc.user_customization.SaveProcessCustomizationRequest;
 import org.spin.backend.grpc.user_customization.SaveWindowCustomizationRequest;
 import org.spin.backend.grpc.user_customization.User;
 import org.spin.backend.grpc.user_customization.UserCustomizationGrpc.UserCustomizationImplBase;
+// import org.spin.base.util.AccessUtil;
 import org.spin.base.util.RecordUtil;
 import org.spin.dictionary.util.DictionaryUtil;
 import org.spin.service.grpc.authentication.SessionManager;
@@ -154,6 +156,7 @@ public class UserCustomization extends UserCustomizationImplBase {
 		query
 			.setLimit(limit, offset)
 			.getIDsAsList()
+			.parallelStream()
 			.forEach(userId -> {
 				User.Builder builder = convertUser(userId);
 				builderList.addRecords(builder);
@@ -261,6 +264,7 @@ public class UserCustomization extends UserCustomizationImplBase {
 		query
 			.setLimit(limit, offset)
 			.getIDsAsList()
+			.parallelStream()
 			.forEach(roleId -> {
 				Role.Builder builder = convertRole(roleId);
 				builderList.addRecords(builder);
@@ -363,6 +367,7 @@ public class UserCustomization extends UserCustomizationImplBase {
 		query
 			.setLimit(limit, offset)
 			.getIDsAsList()
+			.parallelStream()
 			.forEach(aspLevelId -> {
 				LevelCustomization.Builder builder = convertLevelCustomization(aspLevelId);
 				builderList.addRecords(builder);
@@ -503,13 +508,16 @@ public class UserCustomization extends UserCustomizationImplBase {
 
 			// instance tab
 			List<MTabCustom> tabsCustomList = customWindow.getTabs();
-			MTabCustom customTab = tabsCustomList.stream()
+			MTabCustom customTab = null;
+			Optional<MTabCustom> maybeTabCustom = tabsCustomList.parallelStream()
 				.filter(tabItem -> {
 					return tabItem.getAD_Tab_ID() == tab.getAD_Tab_ID();
 				})
 				.findFirst()
-				.orElse(null)
 			;
+			if (maybeTabCustom.isPresent()) {
+				customTab = maybeTabCustom.get();
+			}
 
 			if (customTab == null) {
 				customTab = new MTabCustom(customWindow);
@@ -553,7 +561,7 @@ public class UserCustomization extends UserCustomizationImplBase {
 				}
 
 				// instance custom field
-				MFieldCustom customField = customFieldsList.stream()
+				MFieldCustom customField = customFieldsList.parallelStream()
 					.filter(fieldItem -> {
 						return fieldItem.getAD_Field_ID() == field.getAD_Field_ID();
 					})
@@ -572,10 +580,10 @@ public class UserCustomization extends UserCustomizationImplBase {
 					customField.setSeqNo(fieldAttributes.getSequencePanel());
 				}
 				// checks if the column exists in the database
-				if (customField.get_ColumnIndex(DictionaryUtil.IS_DISPLAYED_AS_PANEL_COLUMN_NAME) >= 0 && !Util.isEmpty(fieldAttributes.getIsDefaultDisplayedAsPanel(), true)) {
+				if (customField.get_ColumnIndex(DictionaryUtil.IS_DISPLAYED_AS_PANEL_COLUMN_NAME) >= 0) {
 					customField.set_ValueOfColumn(
 						DictionaryUtil.IS_DISPLAYED_AS_PANEL_COLUMN_NAME,
-						BooleanManager.getBooleanFromString(
+						BooleanManager.getBooleanToString(
 							fieldAttributes.getIsDefaultDisplayedAsPanel()
 						)
 					);
@@ -713,13 +721,19 @@ public class UserCustomization extends UserCustomizationImplBase {
 			}
 
 			// instance browse field custom
-			MBrowseFieldCustom customBrowseField = customBrowseFieldList.stream()
+			Optional<MBrowseFieldCustom> maybeCustomBrowseField = customBrowseFieldList.parallelStream()
 				.filter(browseFieldItem -> {
 					return browseFieldItem.getAD_Browse_Field_ID() == browseField.getAD_Browse_Field_ID();
 				})
 				.findFirst()
-				.orElse(null)
 			;
+			if (!maybeCustomBrowseField.isPresent()) {
+				log.warning(
+					Msg.getMsg(Env.getCtx(), "@getAD_BrowseCustom_ID@ (" + fieldAttributes.getColumnName() + ") @NotFound@")
+				);
+				return;
+			}
+			MBrowseFieldCustom customBrowseField = maybeCustomBrowseField.get();
 			if (customBrowseField == null || customBrowseField.getAD_BrowseFieldCustom_ID() <= 0) {
 				log.warning(
 					Msg.getMsg(Env.getCtx(), "@getAD_BrowseCustom_ID@ (" + fieldAttributes.getColumnName() + ") @NotFound@")
@@ -790,7 +804,9 @@ public class UserCustomization extends UserCustomizationImplBase {
 		if (process == null || process.getAD_Process_ID() <= 0) {
 			throw new AdempiereException("@AD_Process_ID@ @NotFound@");
 		}
-		// if(!MRole.getDefault().getProcessAccess(process.getAD_Process_ID())) {
+		// Record/Role access
+		// boolean isWithAccess = AccessUtil.isProcessAccess(process.getAD_Process_ID());
+		// if(!isWithAccess) {
 		// 	throw new AdempiereException("@AccessTableNoUpdate@");
 		// }
 
@@ -855,13 +871,19 @@ public class UserCustomization extends UserCustomizationImplBase {
 			}
 
 			// instance custom process parameter
-			MProcessParaCustom customProcessParameter = customProcessParametersList.stream()
+			Optional<MProcessParaCustom> maybeCustomProcessParameter = customProcessParametersList.parallelStream()
 				.filter(processParameterItem -> {
 					return processParameterItem.getAD_Process_Para_ID() == processParameter.getAD_Process_Para_ID();
 				})
 				.findFirst()
-				.orElse(null)
 			;
+			if (!maybeCustomProcessParameter.isPresent()) {
+				log.warning(
+					Msg.getMsg(Env.getCtx(), "@AD_ProcessParaCustom_ID@ (" + fieldAttributes.getColumnName() + ") @NotFound@")
+				);
+				return;
+			}
+			MProcessParaCustom customProcessParameter = maybeCustomProcessParameter.get();
 			if (customProcessParameter == null || customProcessParameter.getAD_ProcessParaCustom_ID() <= 0) {
 				log.warning(
 					Msg.getMsg(Env.getCtx(), "@AD_ProcessParaCustom_ID@ (" + fieldAttributes.getColumnName() + ") @NotFound@")

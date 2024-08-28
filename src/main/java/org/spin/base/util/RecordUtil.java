@@ -51,6 +51,7 @@ import org.compiere.util.TimeUtil;
 import org.compiere.util.Util;
 import org.spin.backend.grpc.common.Entity;
 import org.spin.backend.grpc.common.ListEntitiesResponse;
+import org.spin.base.interim.ContextTemporaryWorkaround;
 import org.spin.dictionary.util.DictionaryUtil;
 import org.spin.service.grpc.util.db.FromUtil;
 import org.spin.service.grpc.util.db.OrderByUtil;
@@ -121,13 +122,21 @@ public class RecordUtil {
 		}
 
 		StringBuffer whereClause = new StringBuffer();
-		List<Object> params = new ArrayList<>();
+		List<Object> filtersList = new ArrayList<>();
 		if (!Util.isEmpty(uuid, true)) {
 			whereClause.append(I_AD_Element.COLUMNNAME_UUID + " = ?");
-			params.add(uuid);
+			filtersList.add(uuid);
 		} else if (isId) {
-			whereClause.append(tableName + "_ID = ?");
-			params.add(recordId);
+			for (final String keyColumnName: table.getKeyColumns()) {
+				MColumn column = table.getColumn(keyColumnName);
+				if (DisplayType.isID(column.getAD_Reference_ID())) {
+					if (whereClause.length() > 0) {
+						whereClause.append(" OR ");
+					}
+					whereClause.append(keyColumnName + " = ?");
+					filtersList.add(recordId);
+				}
+			}
 		} else {
 			throw new AdempiereException("@Record_ID@ / @UUID@ @NotFound@");
 		}
@@ -138,8 +147,9 @@ public class RecordUtil {
 			whereClause.toString(),
 			transactionName
 		)
-			.setParameters(params)
-			.first();
+			.setParameters(filtersList)
+			.first()
+		;
 	}
 	
 	/**
@@ -368,8 +378,7 @@ public class RecordUtil {
 			null : MTable.get(Env.getCtx(), table_name + DictionaryUtil.TRANSLATION_SUFFIX);
 		final String tableAlias = Util.isEmpty(table_alias, true) ? table.getTableName() : table_alias;
 
-		StringBuffer where = new StringBuffer();
-		List<MColumn> selectionColums = table.getColumnsAsList().stream()
+		List<MColumn> selectionColums = table.getColumnsAsList().parallelStream()
 			.filter(column -> {
 				return (column.isIdentifier() || column.isSelectionColumn()
 					|| column.getColumnName().equals("Name")
@@ -380,6 +389,8 @@ public class RecordUtil {
 			})
 			.collect(Collectors.toList());
 
+		// TODO: Add 1=1 to remove `if (where.length() > 0)` and change stream with parallelStream
+		StringBuffer where = new StringBuffer();
 		selectionColums.stream()
 			.filter(column -> {
 				// "Value" is not translated for example
@@ -387,7 +398,7 @@ public class RecordUtil {
 			})
 			.forEach(column -> {
 				if(where.length() > 0) {
-				    where.append(" OR ");
+					where.append(" OR ");
 				}
 				where.append("UPPER(")
 					.append(tableAlias).append(".")
@@ -402,6 +413,7 @@ public class RecordUtil {
 		StringBuffer whereClause = where;
 		String joinTranslation = "";
 		if (tableTranslation != null) {
+			// TODO: Add 1=1 to remove `if (whereTranslation.length() > 0)` and change stream with parallelStream
 			StringBuffer whereTranslation = new StringBuffer();
 			
 			selectionColums.stream()
@@ -645,6 +657,12 @@ public class RecordUtil {
 						log.severe(e.getLocalizedMessage());
 					}
 				}
+
+				// TODO: Temporary Workaround
+				rowValues = ContextTemporaryWorkaround.setContextAsUnknowColumn(
+					table.getTableName(),
+					rowValues
+				);
 				//	
 				entityBuilder.setValues(rowValues);
 				builder.addRecords(entityBuilder.build());

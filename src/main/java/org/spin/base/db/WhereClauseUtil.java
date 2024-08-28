@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -35,12 +36,13 @@ import org.compiere.model.MTable;
 import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
 import org.compiere.util.Util;
-import org.spin.base.query.Filter;
-import org.spin.base.query.FilterManager;
 import org.spin.base.util.RecordUtil;
 import org.spin.dictionary.util.WindowUtil;
+import org.spin.service.grpc.util.db.FromUtil;
 import org.spin.service.grpc.util.db.OperatorUtil;
 import org.spin.service.grpc.util.db.ParameterUtil;
+import org.spin.service.grpc.util.query.Filter;
+import org.spin.service.grpc.util.query.FilterManager;
 import org.spin.service.grpc.util.value.ValueManager;
 import org.spin.util.ASPUtil;
 
@@ -49,6 +51,31 @@ import org.spin.util.ASPUtil;
  * @author Edwin Betancourt, EdwinBetanc0urt@outlook.com, https://github.com/EdwinBetanc0urt
  */
 public class WhereClauseUtil {
+
+
+	/**
+	 * Add and get talbe alias to columns in validation code sql
+	 * @param tableName
+	 * @param tableAlias
+	 * @param dynamicValidation
+	 * @return {String}
+	 */
+	public static String getWhereRestrictionsWithAlias(String tableName, String tableAlias, String dynamicValidation) {
+		String validationCode = getWhereRestrictionsWithAlias(tableAlias, dynamicValidation);
+		if (Util.isEmpty(validationCode, true)) {
+			return "";
+		}
+		if (tableName.equals(tableAlias)) {
+			// ignore replace primary table with alias
+			return validationCode;
+		}
+		final String regexPrimarayTable = "\\b" + tableName + "\\.";
+		String validationWithAlias = validationCode.replaceAll(regexPrimarayTable, tableAlias + ".");
+		if (Util.isEmpty(validationWithAlias, true)) {
+			return "";
+		}
+		return validationWithAlias;
+	}
 
 	/**
 	 * Add and get talbe alias to columns in validation code sql
@@ -69,13 +96,14 @@ public class WhereClauseUtil {
 
 		String validationCode = dynamicValidation;
 		if (!matcherTableAliases.find()) {
+			final String columnsRegex = "\\b(?![\\w.]+\\.)(?<![\\w\\s]+(\\.\\w+))(?<!\\w\\.)(?!(?:JOIN|ORDER\\s+BY)\\b)(\\w+)(\\s+){0,1}";
 			// columnName = value
 			Pattern patternColumnName = Pattern.compile(
-				"(\\w+)(\\s+){0,1}" + OperatorUtil.SQL_OPERATORS_REGEX,
-				Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+				columnsRegex + OperatorUtil.SQL_OPERATORS_REGEX,
+				Pattern.DOTALL
 			);
 			Matcher matchColumnName = patternColumnName.matcher(validationCode);
-			validationCode = matchColumnName.replaceAll(tableAlias + ".$1$2$3"); // $&
+			validationCode = matchColumnName.replaceAll(tableAlias + ".$1$2$3$4"); // $&
 		}
 
 		return validationCode;
@@ -93,16 +121,33 @@ public class WhereClauseUtil {
 		String queryWithoutOrderBy = org.spin.service.grpc.util.db.OrderByUtil.removeOrderBy(sql);
 		String orderByClause = org.spin.service.grpc.util.db.OrderByUtil.getOnlyOrderBy(sql);
 
+
+		String tableWithAliases = FromUtil.getPatternTableName(tableAlias, null);
+		String regex = "\\s+(FROM)\\s+(" + tableWithAliases + ")\\s+(WHERE\\b)";
+
+		Pattern pattern = Pattern.compile(
+			regex,
+			Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+		);
+		Matcher matcherFrom = pattern
+			.matcher(sql);
+		List<MatchResult> fromWhereParts = matcherFrom.results()
+			.collect(
+				Collectors.toList()
+			)
+		;
+
 		StringBuffer whereClause = new StringBuffer();
-		if(queryWithoutOrderBy.contains(" WHERE ")) {
+		if (fromWhereParts != null && fromWhereParts.size() > 0) {
 			whereClause.append(" AND ");
 		} else {
 			whereClause.append(" WHERE ");
 		}
+
 		if (!Util.isEmpty(tableAlias, true)) {
 			whereClause.append(" " + tableAlias + ".");
 		}
-		whereClause.append("IsActive = 'Y'");
+		whereClause.append("IsActive = 'Y' ");
 
 
 		String sqlWithActiveRecords = queryWithoutOrderBy + whereClause.toString() + orderByClause;
@@ -110,6 +155,33 @@ public class WhereClauseUtil {
 		return sqlWithActiveRecords;
 	}
 
+	/**
+	 * Add and get sql with active records
+	 * @param tableAlias
+	 * @param dynamicValidation
+	 * @return {String}
+	 */
+	public static String removeIsActiveRestriction(String tableAlias, String sql) {
+		String SQL_WHERE_REGEX = "(WHERE|(AND|OR))(\\s+(" + tableAlias + ".IsActive|IsActive)\\s*=\\s*'(Y|N)')";
+
+		String sqlWithoutRestriction = sql;
+		// remove order by clause
+		Pattern patternWhere = Pattern.compile(
+			SQL_WHERE_REGEX,
+			Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+		);	
+		Matcher matcherWhere = patternWhere
+			.matcher(sql);
+		if(matcherWhere.find()) {
+			int startPosition = matcherWhere.start();
+			String initialPart = sql.substring(0, startPosition);
+			int endPosition = matcherWhere.end();
+			String finalPart = sql.substring(endPosition, sql.length());
+			sqlWithoutRestriction = initialPart + finalPart;
+		}
+
+		return sqlWithoutRestriction;
+	}
 
 	/**
 	 * Get sql restriction by operator
@@ -122,7 +194,35 @@ public class WhereClauseUtil {
 	 * @return
 	 */
 	public static String getRestrictionByOperator(Filter condition, List<Object> params) {
-		return getRestrictionByOperator(condition, 0, params);
+		return getRestrictionByOperator(null, condition, 0, params);
+	}
+
+	/**
+	 * Get sql restriction by operator
+	 * @param columnName
+	 * @param operatorValue
+	 * @param value
+	 * @param valueTo
+	 * @param valuesList
+	 * @param params
+	 * @return
+	 */
+	public static String getRestrictionByOperator(Filter condition, int displayType, List<Object> params) {
+		return getRestrictionByOperator(null, condition, displayType, params);
+	}
+
+	/**
+	 * Get sql restriction by operator
+	 * @param columnName
+	 * @param operatorValue
+	 * @param value
+	 * @param valueTo
+	 * @param valuesList
+	 * @param params
+	 * @return
+	 */
+	public static String getRestrictionByOperator(String tableAlias, Filter condition, List<Object> params) {
+		return getRestrictionByOperator(tableAlias, condition, 0, params);
 	}
 
 	/**
@@ -132,7 +232,7 @@ public class WhereClauseUtil {
 	 * @param parameters
 	 * @return
 	 */
-	public static String getRestrictionByOperator(Filter condition, int displayType, List<Object> parameters) {
+	public static String getRestrictionByOperator(String tableAlias, Filter condition, int displayType, List<Object> parameters) {
 		String operatorValue = OperatorUtil.EQUAL;
 		if (!Util.isEmpty(condition.getOperator(), true)) {
 			operatorValue = condition.getOperator().toLowerCase();
@@ -140,6 +240,9 @@ public class WhereClauseUtil {
 		String sqlOperator = OperatorUtil.convertOperator(condition.getOperator());
 
 		String columnName = condition.getColumnName();
+		if (!Util.isEmpty(tableAlias, true)) {
+			columnName = tableAlias + "." + columnName;
+		}
 		String sqlValue = "";
 		StringBuilder additionalSQL = new StringBuilder();
 		//	For IN or NOT IN
@@ -275,6 +378,20 @@ public class WhereClauseUtil {
 		return rescriction;
 	}
 
+
+	/**
+	 * Get sql restriction by operator
+	 * @param columnName
+	 * @param operatorValue
+	 * @param value
+	 * @param valueTo
+	 * @param valuesList
+	 * @return
+	 */
+	public static String getRestrictionByOperatorWithoutParameters(Filter condition, int displayType) {
+		return getRestrictionByOperatorWithoutParameters(null, condition, displayType);
+	}
+
 	/**
 	 * Get sql restriction by operator without manage filters
 	 * @param columnName
@@ -282,12 +399,16 @@ public class WhereClauseUtil {
 	 * @param value
 	 * @param valueTo
 	 * @param valuesList
-	 * @param params
 	 * @return
 	 */
-	public static String getRestrictionByOperator(Filter condition, int displayType) {
+	public static String getRestrictionByOperatorWithoutParameters(String tableAlias, Filter condition, int displayType) {
 		String sqlOperator = OperatorUtil.convertOperator(condition.getOperator());
+
 		String columnName = condition.getColumnName();
+		if (!Util.isEmpty(tableAlias, true)) {
+			columnName = tableAlias + "." + columnName;
+		}
+
 		String operatorValue = condition.getOperator();
 		String sqlValue = "";
 		StringBuilder additionalSQL = new StringBuilder();
@@ -453,6 +574,7 @@ public class WhereClauseUtil {
 	 * @return
 	 */
 	public static String getWhereClauseFromCriteria(String filters, String tableName, String tableAlias, List<Object> params) {
+		// TODO: Add 1=1 to remove `if (whereClause.length() > 0)` and change stream with parallelStream
 		StringBuffer whereClause = new StringBuffer();
 		// Vaidate and Table
 		final MTable table = RecordUtil.validateAndGetTable(tableName);
@@ -463,27 +585,23 @@ public class WhereClauseUtil {
 		FilterManager.newInstance(filters).getConditions().stream()
 			.filter(condition -> !Util.isEmpty(condition.getColumnName(), true))
 			.forEach(condition -> {
+				MColumn column = table.getColumn(condition.getColumnName());
+				if (column == null || column.getAD_Column_ID() <= 0) {
+					// filter key does not exist as a column, next loop
+					return;
+				}
 				if (whereClause.length() > 0) {
 					whereClause.append(" AND ");
 				}
-				int displayTypeId = 0;
-				int columnId = MColumn.getColumn_ID(table.getTableName(), condition.getColumnName());
-				if (columnId > 0) {
-					MColumn column = MColumn.get(
-						Env.getCtx(),
-						columnId
-					);
-					if (column != null) {
-						displayTypeId = column.getAD_Reference_ID();
-						// set table alias to column name
-						String columnName = tableNameAlias + "." + condition.getColumnName();
-						condition.setColumnName(columnName);
-					}
-				}
-
+				int displayTypeId = column.getAD_Reference_ID();
+				// set table alias to column name
+				// TODO: Evaluate support to columnSQL
+				String columnName = tableNameAlias + "." + column.getColumnName();
+				condition.setColumnName(columnName);
 				String restriction = WhereClauseUtil.getRestrictionByOperator(condition, displayTypeId, params);
 
 				whereClause.append(restriction);
+
 		});
 		//	Return where clause
 		return whereClause.toString();
@@ -533,7 +651,7 @@ public class WhereClauseUtil {
 		int tabLevel = tab.getTabLevel();
 		//	Create where clause for children
 		if (tab.getTabLevel() > 0 && tabs != null) {
-			Optional<MTab> optionalTab = tabs.stream()
+			Optional<MTab> optionalTab = tabs.parallelStream()
 				.filter(parentTab -> {
 					return parentTab.getAD_Tab_ID() != tabId
 						&& parentTab.getTabLevel() == 0;
@@ -709,7 +827,7 @@ public class WhereClauseUtil {
 		if (filters == null) {
 			return null;
 		}
-		
+		// TODO: Add 1=1 to remove `if (whereClause.length() > 0)` and change stream with parallelStream
 		StringBuffer whereClause = new StringBuffer();
 		List<Filter> conditions = FilterManager.newInstance(filters).getConditions();
 //		if (!Util.isEmpty(filters.getWhereClause(), true)) {
@@ -796,6 +914,7 @@ public class WhereClauseUtil {
 			return null;
 		}
 
+		// TODO: Add 1=1 to remove `if (whereClause.length() > 0)` and change stream with parallelStream
 		StringBuffer whereClause = new StringBuffer();
 		List<Filter> conditions = FilterManager.newInstance(filters).getConditions();
 //		if (!Util.isEmpty(filters.getWhereClause(), true)) {

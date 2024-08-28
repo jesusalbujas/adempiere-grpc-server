@@ -1,6 +1,6 @@
 /************************************************************************************
  * Copyright (C) 2018-present E.R.P. Consultores y Asociados, C.A.                  *
- * Contributor(s): Edwin Betancourt EdwinBetanc0urt@outlook.com                     *
+ * Contributor(s): Edwin Betancourt, EdwinBetanc0urt@outlook.com                    *
  * This program is free software: you can redistribute it and/or modify             *
  * it under the terms of the GNU General Public License as published by             *
  * the Free Software Foundation, either version 2 of the License, or                *
@@ -12,46 +12,24 @@
  * You should have received a copy of the GNU General Public License                *
  * along with this program. If not, see <https://www.gnu.org/licenses/>.            *
  ************************************************************************************/
-syntax = "proto3";
+package org.compiere.model;
 
+/**
+ * @author Edwin Betancourt, EdwinBetanc0urt@outlook.com, https://github.com/EdwinBetanc0urt
+ * Class for access to PO protected method
+ */
+public class POAdapter {
+	private PO po;
 
-option java_multiple_files = true;
-option java_package = "org.spin.backend.grpc.order";
-option java_outer_classname = "ADempiereOrder";
-
-import "google/api/annotations.proto";
-import "google/protobuf/struct.proto";
-
-import "base_data_type.proto";
-
-// Base URL
-// /info/sales/
-
-package order;
-
-// The order service definition.
-service Order {
-	// List Order Info Request
-	rpc ListOrderInfo(ListOrderInfoRequest) returns (data.ListEntitiesResponse) {
-		option (google.api.http) = { get: "/info/sales/orders" };
+	public POAdapter(PO po) {
+		this.po = po;
 	}
-}
 
-// List Order Info Request
-message ListOrderInfoRequest {
-	string filters = 1;
-	string sort_by = 2;
-	repeated string group_columns = 3;
-	repeated string select_columns = 4;
-	int32 page_size = 5;
-	string page_token = 6;
-	string search_value = 7;
-	// references
-	int32 process_parameter_id = 8;
-	int32 field_id = 9;
-	int32 browse_field_id = 10;
-	int32 reference_id = 11;
-	int32 column_id = 12;
-	string column_name = 13;
-	google.protobuf.Struct context_attributes = 14;
+	public void set_ValueNoCheck(String columnName, Object value) {
+		po.set_ValueNoCheck(
+			columnName,
+			value
+		);
+	}
+
 }

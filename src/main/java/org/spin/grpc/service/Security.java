@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.adempiere.core.domains.models.I_AD_Browse;
 import org.adempiere.core.domains.models.I_AD_Form;
@@ -29,6 +28,7 @@ import org.adempiere.core.domains.models.I_AD_Menu;
 import org.adempiere.core.domains.models.I_AD_Org;
 import org.adempiere.core.domains.models.I_AD_Process;
 import org.adempiere.core.domains.models.I_AD_Role;
+import org.adempiere.core.domains.models.I_AD_User_Authentication;
 import org.adempiere.core.domains.models.I_AD_Window;
 import org.adempiere.core.domains.models.I_AD_Workflow;
 import org.adempiere.core.domains.models.I_M_Warehouse;
@@ -64,6 +64,9 @@ import org.spin.authentication.services.OpenIDUtil;
 import org.spin.backend.grpc.security.ChangeRoleRequest;
 import org.spin.backend.grpc.security.Client;
 import org.spin.backend.grpc.security.DictionaryEntity;
+import org.spin.backend.grpc.security.DictionaryType;
+import org.spin.backend.grpc.security.GetDictionaryAccessRequest;
+import org.spin.backend.grpc.security.GetDictionaryAccessResponse;
 import org.spin.backend.grpc.security.ListOrganizationsRequest;
 import org.spin.backend.grpc.security.ListOrganizationsResponse;
 import org.spin.backend.grpc.security.ListRolesRequest;
@@ -77,6 +80,7 @@ import org.spin.backend.grpc.security.LoginRequest;
 import org.spin.backend.grpc.security.LogoutRequest;
 import org.spin.backend.grpc.security.Menu;
 import org.spin.backend.grpc.security.MenuRequest;
+import org.spin.backend.grpc.security.MenuResponse;
 import org.spin.backend.grpc.security.Organization;
 import org.spin.backend.grpc.security.Role;
 import org.spin.backend.grpc.security.SecurityGrpc.SecurityImplBase;
@@ -124,7 +128,7 @@ public class Security extends SecurityImplBase {
 	/**	Logger			*/
 	private CLogger log = CLogger.getCLogger(Security.class);
 	/**	Menu */
-	private static CCache<String, Menu.Builder> menuCache = new CCache<String, Menu.Builder>("Menu_for_User", 30, 0);
+	private static CCache<String, MenuResponse.Builder> menuCache = new CCache<String, MenuResponse.Builder>("Menu_for_User", 30, 0);
 
 
 
@@ -134,7 +138,7 @@ public class Security extends SecurityImplBase {
 			log.fine("List Services");
 			ListServicesResponse.Builder serviceBuilder = ListServicesResponse.newBuilder();
 			Hashtable<Integer, Map<String, String>> services = OpenIDUtil.getAuthenticationServices();
-			services.entrySet().forEach(service -> {
+			services.entrySet().parallelStream().forEach(service -> {
 				Service.Builder availableService = Service.newBuilder();
 				availableService.setId(service.getKey())
 					.setDisplayName(
@@ -249,14 +253,21 @@ public class Security extends SecurityImplBase {
 		MRole role = MRole.get(context, currentSession.getAD_Role_ID());
 
 		// Session values
+		boolean isOpenID = false;
+		if (currentSession.get_ColumnIndex(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) >= 0) {
+			isOpenID = currentSession.get_ValueAsInt(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) > 0;
+		}
+
+		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSession(
+		final String bearerToken = SessionManager.createSessionAndGetToken(
 			currentSession.getWebSession(),
 			language,
 			role.getAD_Role_ID(),
 			userId,
 			currentSession.getAD_Org_ID(),
-			warehouseId
+			warehouseId,
+			isOpenID
 		);
 
 		// Update session preferences
@@ -289,27 +300,7 @@ public class Security extends SecurityImplBase {
 			);
 		}
 	}
-	
-	@Override
-	public void getMenu(MenuRequest request, StreamObserver<Menu> responseObserver) {
-		try {
-			if(request == null) {
-				throw new AdempiereException("Object Request Null");
-			}
-			Menu.Builder menuBuilder = convertMenu();
-			responseObserver.onNext(menuBuilder.build());
-			responseObserver.onCompleted();
-		} catch (Exception e) {
-			log.severe(e.getLocalizedMessage());
-			e.printStackTrace();
-			responseObserver.onError(
-				Status.INTERNAL
-					.withDescription(e.getLocalizedMessage())
-					.withCause(e)
-					.asRuntimeException()
-			);
-		}
-	}
+
 
 
 	@Override
@@ -498,9 +489,11 @@ public class Security extends SecurityImplBase {
 		;
 		//	Get List
 		query.setLimit(limit, offset)
-			.getIDsAsList()
-			.forEach(organizationId -> {
-				MOrg organization = MOrg.get(Env.getCtx(), organizationId);
+			// .getIDsAsList() // do not use the list of identifiers because it cannot be instantiated zero (0)
+			.<MOrg>list()
+			.forEach(organization -> {
+				// MOrg.get static method not instance the organization in 0=* (asterisk)
+				// MOrg organization = MOrg.get(Env.getCtx(), organizationId);
 				Organization.Builder organizationBuilder = convertOrganization(organization);
 				builder.addOrganizations(organizationBuilder);
 			});
@@ -519,22 +512,26 @@ public class Security extends SecurityImplBase {
 			return organizationBuilder;
 		}
 		MOrgInfo organizationInfo = MOrgInfo.get(Env.getCtx(), organization.getAD_Org_ID(), null);
-		AtomicReference<String> corporateImageBranding = new AtomicReference<String>();
+
 		if(organizationInfo.getCorporateBrandingImage_ID() > 0 && AttachmentUtil.getInstance().isValidForClient(organizationInfo.getAD_Client_ID())) {
 			MClientInfo clientInfo = MClientInfo.get(Env.getCtx(), organizationInfo.getAD_Client_ID());
 			MADAttachmentReference attachmentReference = MADAttachmentReference.getByImageId(Env.getCtx(), clientInfo.getFileHandler_ID(), organizationInfo.getCorporateBrandingImage_ID(), null);
 			if(attachmentReference != null
 					&& attachmentReference.getAD_AttachmentReference_ID() > 0) {
-				corporateImageBranding.set(attachmentReference.getValidFileName());
+					organizationBuilder.setCorporateBrandingImage(
+					ValueManager.validateNull(
+						attachmentReference.getFileName()
+					)
+				);
 			}
 		}
 		
 		organizationBuilder.setId(
 				organization.getAD_Org_ID()
 			)
-			.setCorporateBrandingImage(
+			.setUuid(
 				ValueManager.validateNull(
-					corporateImageBranding.get()
+					organization.getUUID()
 				)
 			)
 			.setName(
@@ -642,12 +639,14 @@ public class Security extends SecurityImplBase {
 		//	Get List
 		// TODO: Fix .setLimit combined with .setApplyAccessFilter and with access record (ROWNUM error)
 		query //.setLimit(limit, offset)
-			.getIDsAsList()
-			.forEach(warehouseId -> {
-				MWarehouse warehouse = MWarehouse.get(Env.getCtx(), warehouseId);
-				Warehouse.Builder warehousBuilder = convertWarehouse(warehouse);
+			// .getIDsAsList() // do not use the list of identifiers because it cannot be instantiated zero (0)
+			.<MWarehouse>list()
+			.forEach(warehouse -> {
+				// MWarehouse.get static method not instance the warehouse in 0=* (asterisk)
+				// MWarehouse warehouse = MWarehouse.get(Env.getCtx(), warehouseId);
+				Warehouse.Builder warehouseBuilder = convertWarehouse(warehouse);
 				builder.addWarehouses(
-					warehousBuilder
+					warehouseBuilder
 				);
 			});
 		//	
@@ -660,12 +659,22 @@ public class Security extends SecurityImplBase {
 	 * @return
 	 */
 	public static Warehouse.Builder convertWarehouse(MWarehouse warehouse) {
-		Warehouse.Builder warehousBuilder = Warehouse.newBuilder();
+		Warehouse.Builder warehouseBuilder = Warehouse.newBuilder();
 		if (warehouse == null) {
-			return warehousBuilder;
+			return warehouseBuilder;
 		}
-		warehousBuilder.setId(
+		warehouseBuilder.setId(
 				warehouse.getM_Warehouse_ID()
+			)
+			.setUuid(
+				ValueManager.validateNull(
+					warehouse.getUUID()
+				)
+			)
+			.setValue(
+				ValueManager.validateNull(
+					warehouse.getValue()
+				)
 			)
 			.setName(
 				ValueManager.validateNull(
@@ -678,7 +687,7 @@ public class Security extends SecurityImplBase {
 				)
 			)
 		;
-		return warehousBuilder;
+		return warehouseBuilder;
 	}
 
 
@@ -782,7 +791,16 @@ public class Security extends SecurityImplBase {
 				}
 			}
 		}
-		return createValidSession(isDefaultRole, request.getClientVersion(), request.getLanguage(), roleId, userId, organizationId, warehouseId);
+		return createValidSession(
+			isDefaultRole,
+			request.getClientVersion(),
+			request.getLanguage(),
+			roleId,
+			userId,
+			organizationId,
+			warehouseId,
+			false
+		);
 	}
 
 	/**
@@ -796,7 +814,7 @@ public class Security extends SecurityImplBase {
 	 * @param warehouseId
 	 * @return
 	 */
-	private Session.Builder createValidSession(boolean isDefaultRole, String clientVersion, String language, int roleId, int userId, int organizationId, int warehouseId) {
+	private Session.Builder createValidSession(boolean isDefaultRole, String clientVersion, String language, int roleId, int userId, int organizationId, int warehouseId, boolean isOpenID) {
 		Session.Builder builder = Session.newBuilder();
 			if(isDefaultRole && roleId <= 0) {
 				roleId = SessionManager.getDefaultRoleId(userId);
@@ -821,7 +839,15 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSession(clientVersion, language, roleId, userId, organizationId, warehouseId);
+			final String bearerToken = SessionManager.createSessionAndGetToken(
+				clientVersion,
+				language,
+				roleId,
+				userId,
+				organizationId,
+				warehouseId,
+				isOpenID
+			);
 			builder.setToken(bearerToken);
 			//	Return session
 			return builder;
@@ -858,34 +884,19 @@ public class Security extends SecurityImplBase {
 		if(validUser == null) {
 			throw new AdempiereException("@AD_User_ID@ / @AD_Role_ID@ / @AD_Org_ID@ @NotFound@");
 		}
-		return createValidSession(true, request.getClientVersion(), request.getLanguage(), -1, validUser.getAD_User_ID(), -1, -1); 
+		return createValidSession(
+			true,
+			request.getClientVersion(),
+			request.getLanguage(),
+			-1,
+			validUser.getAD_User_ID(),
+			-1,
+			-1,
+			true
+		);
 	}
 
 
-	/**
-	 * Convert Values from Context
-	 * @param value
-	 * @return
-	 */
-//	private Value.Builder convertObjectFromContext(String value) {
-//		Value.Builder builder = Value.newBuilder();
-//		if (Util.isEmpty(value)) {
-//			return builder;
-//		}
-//		if (ValueUtil.isNumeric(value)) {
-//			builder.setIntValue(ValueUtil.getIntegerFromString(value));
-//		} else if (ValueUtil.isBoolean(value)) {
-//			boolean booleanValue = ValueUtil.stringToBoolean(value.trim());
-//			builder.setBooleanValue(booleanValue);
-//		} else if (ValueUtil.isDate(value)) {
-//			return ValueUtil.getValueFromDate(ValueUtil.getDateFromString(value));
-//		} else {
-//			builder.setStringValue(ValueUtil.validateNull(value));
-//		}
-//		//	
-//		return builder;
-//	}
-	
 	@Override
 	public void runChangeRole(ChangeRoleRequest request, StreamObserver<Session> responseObserver) {
 		try {
@@ -960,7 +971,19 @@ public class Security extends SecurityImplBase {
 
 		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSession(currentSession.getWebSession(), language, roleId, userId, organizationId, warehouseId);
+		boolean isOpenID = false;
+		if (currentSession.get_ColumnIndex(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) >= 0) {
+			isOpenID = currentSession.get_ValueAsInt(I_AD_User_Authentication.COLUMNNAME_AD_User_Authentication_ID) > 0;
+		}
+		final String bearerToken = SessionManager.createSessionAndGetToken(
+			currentSession.getWebSession(),
+			language,
+			roleId,
+			userId,
+			organizationId,
+			warehouseId,
+			isOpenID
+		);
 		builder.setToken(bearerToken);
 		// Logout
 		logoutSession(LogoutRequest.newBuilder().build());
@@ -1011,7 +1034,8 @@ public class Security extends SecurityImplBase {
 			ValueManager.validateNull(ContextManager.getDefaultLanguage(Env.getAD_Language(Env.getCtx()))));
 		//	Set default context
 		Struct.Builder contextValues = Struct.newBuilder();
-		Env.getCtx().entrySet().stream()
+		Env.getCtx().entrySet()
+			.stream()
 			.filter(keyValue -> {
 				return ContextManager.isSessionContext(
 					String.valueOf(
@@ -1029,7 +1053,12 @@ public class Security extends SecurityImplBase {
 			});
 		session.setDefaultContext(contextValues);
 	}
-	
+
+	/**
+	 * Convert Values from Context
+	 * @param value
+	 * @return
+	 */
 	private Value.Builder convertObjectFromContext(String value) {
 		Value.Builder builder = Value.newBuilder();
 		if (Util.isEmpty(value)) {
@@ -1053,8 +1082,7 @@ public class Security extends SecurityImplBase {
 		return builder;
 	}
 
-	
-	
+
 	/**
 	 * Logout session
 	 * @param request
@@ -1082,7 +1110,12 @@ public class Security extends SecurityImplBase {
 		SessionManager.loadDefaultSessionValues(context, Env.getAD_Language(context));
 		//	Session values
 		SessionInfo.Builder builder = SessionInfo.newBuilder();
-		builder.setId(session.getAD_Session_ID())
+		builder.setId(
+				session.getAD_Session_ID()
+			)
+			.setUuid(
+				session.getUUID()
+			)
 			.setName(
 				ValueManager.validateNull(
 					session.getDescription()
@@ -1112,7 +1145,19 @@ public class Security extends SecurityImplBase {
 	 */
 	private UserInfo.Builder convertUserInfo(MUser user) {
 		UserInfo.Builder userInfo = UserInfo.newBuilder()
-			.setId(user.getAD_User_ID())
+			.setId(
+				user.getAD_User_ID()
+			)
+			.setUuid(
+				ValueManager.validateNull(
+					user.getUUID()
+				)
+			)
+			.setValue(
+				ValueManager.validateNull(
+					user.getValue()
+				)
+			)
 			.setName(
 				ValueManager.validateNull(
 					user.getName()
@@ -1142,7 +1187,7 @@ public class Security extends SecurityImplBase {
 					&& attachmentReference.getAD_AttachmentReference_ID() > 0) {
 				userInfo.setImage(
 					ValueManager.validateNull(
-						attachmentReference.getValidFileName()
+						attachmentReference.getFileName()
 					)
 				);
 			}
@@ -1190,7 +1235,14 @@ public class Security extends SecurityImplBase {
 		if (client == null) {
 			return builder;
 		}
-		builder.setId(client.getAD_Client_ID())
+		builder.setId(
+				client.getAD_Client_ID()
+			)
+			.setUuid(
+				ValueManager.validateNull(
+					client.getUUID()
+				)
+			)
 			.setName(
 				ValueManager.validateNull(
 					client.getName()
@@ -1216,7 +1268,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogo(
 						ValueManager.validateNull(
-							attachmentReference.getValidFileName()
+							attachmentReference.getFileName()
 						)
 					);
 				}
@@ -1231,7 +1283,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogoReport(
 						ValueManager.validateNull(
-							attachmentReference.getValidFileName()
+							attachmentReference.getFileName()
 						)
 					);
 				}
@@ -1246,7 +1298,7 @@ public class Security extends SecurityImplBase {
 				if (attachmentReference != null && attachmentReference.getAD_AttachmentReference_ID() > 0) {
 					builder.setLogoWeb(
 						ValueManager.validateNull(
-							attachmentReference.getValidFileName()
+							attachmentReference.getFileName()
 						)
 					);
 				}
@@ -1271,7 +1323,14 @@ public class Security extends SecurityImplBase {
 		}
 		Client.Builder clientBuilder = convertClient(role.getAD_Client_ID());
 		builder = Role.newBuilder()
-			.setId(role.getAD_Role_ID())
+			.setId(
+				role.getAD_Role_ID()
+			)
+			.setUuid(
+				ValueManager.validateNull(
+					role.getUUID()
+				)
+			)
 			.setName(
 				ValueManager.validateNull(
 					role.getName()
@@ -1314,19 +1373,41 @@ public class Security extends SecurityImplBase {
 	}
 
 
+
+	@Override
+	public void getMenu(MenuRequest request, StreamObserver<MenuResponse> responseObserver) {
+		try {
+			if(request == null) {
+				throw new AdempiereException("Menu Request Null");
+			}
+			MenuResponse.Builder menuBuilder = convertMenu();
+			responseObserver.onNext(menuBuilder.build());
+			responseObserver.onCompleted();
+		} catch (Exception e) {
+			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
+			responseObserver.onError(
+				Status.INTERNAL
+					.withDescription(e.getLocalizedMessage())
+					.withCause(e)
+					.asRuntimeException()
+			);
+		}
+	}
+
 	/**
 	 * Convert Menu
 	 * @return
 	 */
-	private Menu.Builder convertMenu() {
+	private MenuResponse.Builder convertMenu() {
 		int roleId = Env.getAD_Role_ID(Env.getCtx());
 		int userId = Env.getAD_User_ID(Env.getCtx());
 		String menuKey = roleId + "|" + userId + "|" + Env.getAD_Language(Env.getCtx());
-		Menu.Builder builder = menuCache.get(menuKey);
-		if(builder != null) {
-			return builder;
+		MenuResponse.Builder builderList = menuCache.get(menuKey);
+		if(builderList != null) {
+			return builderList;
 		}
-		builder = Menu.newBuilder();
+
 		MMenu menu = new MMenu(Env.getCtx(), 0, null);
 		menu.setName(Msg.getMsg(Env.getCtx(), "Menu"));
 		//	Get Reference
@@ -1338,10 +1419,12 @@ public class Security extends SecurityImplBase {
 		if (treeId <= 0) {
 			treeId = MTree.getDefaultTreeIdFromTableId(menu.getAD_Client_ID(), I_AD_Menu.Table_ID);
 		}
-		if(treeId != 0) {
+
+		if(treeId > 0) {
+			builderList = MenuResponse.newBuilder();
 			MTree tree = new MTree(Env.getCtx(), treeId, false, false, null, null);
 			//	
-			builder = convertMenu(Env.getCtx(), menu, 0, Env.getAD_Language(Env.getCtx()));
+			// Menu.Builder builder = convertMenu(Env.getCtx(), menu, 0, Env.getAD_Language(Env.getCtx()));
 			//	Get main node
 			MTreeNode rootNode = tree.getRoot();
 			Enumeration<?> childrens = rootNode.children();
@@ -1355,12 +1438,14 @@ public class Security extends SecurityImplBase {
 				);
 				//	Explode child
 				addChildren(Env.getCtx(), childBuilder, child, Env.getAD_Language(Env.getCtx()));
-				builder.addChildren(childBuilder.build());
+				// builder.addChildren(childBuilder.build());
+				builderList.addMenus(childBuilder);
 			}
 		}
+
 		//	Set from DB
-		menuCache.put(menuKey, builder);
-		return builder;
+		menuCache.put(menuKey, builderList);
+		return builderList;
 	}
 
 	/**
@@ -1412,7 +1497,6 @@ public class Security extends SecurityImplBase {
 			)
 			.setIsSummary(menu.isSummary())
 			.setIsReadOnly(menu.isReadOnly())
-			.setIsActive(menu.isActive())
 		;
 		//	Supported actions
 		if(!Util.isEmpty(menu.getAction(), true)) {
@@ -1443,8 +1527,15 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setForm(actionReference);
-			} else if (menu.getAction().equals(MMenu.ACTION_Window) &&menu.getAD_Window_ID() > 0) {
+				builder.setActionId(form.getAD_Form_ID())
+					.setActionUuid(
+						ValueManager.validateNull(
+							form.getUUID()
+						)
+					)
+					.setForm(actionReference)
+				;
+			} else if (menu.getAction().equals(MMenu.ACTION_Window) && menu.getAD_Window_ID() > 0) {
 				MWindow window = new MWindow(context, menu.getAD_Window_ID(), null);
 				actionReference.setId(
 						window.getAD_Window_ID()
@@ -1470,7 +1561,14 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setWindow(actionReference);
+				builder.setActionId(window.getAD_Window_ID())
+					.setActionUuid(
+						ValueManager.validateNull(
+							window.getUUID()
+						)
+					)
+					.setWindow(actionReference)
+				;
 				
 			} else if ((menu.getAction().equals(MMenu.ACTION_Process) || menu.getAction().equals(MMenu.ACTION_Report))
 					&& menu.getAD_Process_ID() > 0) {
@@ -1499,8 +1597,14 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setProcess(actionReference);
-				
+				builder.setActionId(process.getAD_Process_ID())
+					.setActionUuid(
+						ValueManager.validateNull(
+							process.getUUID()
+						)
+					)
+					.setProcess(actionReference)
+				;
 			} else if (menu.getAction().equals(MMenu.ACTION_SmartBrowse) && menu.getAD_Browse_ID() > 0) {
 				MBrowse smartBrowser = MBrowse.get(context, menu.getAD_Browse_ID());
 				actionReference.setId(
@@ -1527,8 +1631,14 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setBrowse(actionReference);
-				
+				builder.setActionId(smartBrowser.getAD_Browse_ID())
+					.setActionUuid(
+						ValueManager.validateNull(
+							smartBrowser.getUUID()
+						)
+					)
+					.setBrowser(actionReference)
+				;
 			} else if (menu.getAction().equals(MMenu.ACTION_WorkFlow) && menu.getAD_Workflow_ID() > 0) {
 				MWorkflow workflow = MWorkflow.get(context, menu.getAD_Workflow_ID());
 				actionReference.setId(
@@ -1555,12 +1665,19 @@ public class Security extends SecurityImplBase {
 						)
 					)
 				;
-				builder.setWorkflow(actionReference);
+				builder.setActionId(workflow.getAD_Workflow_ID())
+					.setActionUuid(
+						ValueManager.validateNull(
+							workflow.getUUID()
+						)
+					)
+					.setWorkflow(actionReference)
+				;
 			}
 		}
 		return builder;
 	}
-	
+
 	/**
 	 * Add children to menu
 	 * @param context
@@ -1588,4 +1705,131 @@ public class Security extends SecurityImplBase {
 			);
 		}
 	}
+
+
+
+	@Override
+	public void getDictionaryAccess(GetDictionaryAccessRequest request, StreamObserver<GetDictionaryAccessResponse> responseObserver) {
+		try {
+			log.fine("Get Dictionary Access");
+			GetDictionaryAccessResponse.Builder builder = getDictionaryAccess(request);
+			responseObserver.onNext(builder.build());
+			responseObserver.onCompleted();
+		} catch (Exception e) {
+			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
+			responseObserver.onError(
+				Status.INTERNAL
+					.withDescription(e.getLocalizedMessage())
+					.withCause(e)
+					.asRuntimeException()
+			);
+		}
+	}
+
+	GetDictionaryAccessResponse.Builder getDictionaryAccess(GetDictionaryAccessRequest request) {
+		GetDictionaryAccessResponse.Builder builder = GetDictionaryAccessResponse.newBuilder();
+		if (request.getDictionaryType() == DictionaryType.UNKNOW) {
+			throw new AdempiereException("DictionaryType @Mandatory@");
+		}
+		int dictionaryId = request.getId();
+		if (dictionaryId <= 0) {
+			throw new AdempiereException("@Record_ID@ @Mandatory@");
+		}
+
+		MRole role = MRole.getDefault();
+
+		boolean isWithAccess = false;
+		String message = "";
+		if (request.getDictionaryTypeValue() == DictionaryType.MENU_VALUE) {
+			isWithAccess = true;
+		} else if (request.getDictionaryTypeValue() == DictionaryType.WINDOW_VALUE) {
+			isWithAccess = true;
+			Boolean isRoleAccess = role.getWindowAccess(dictionaryId);
+			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
+				message += "@AD_Window_ID@ without role access.";
+				isWithAccess = false;
+			}
+			boolean isRecordAccess = role.isRecordAccess(
+				I_AD_Window.Table_ID,
+				dictionaryId,
+				MRole.SQL_RO
+			);
+			if (!isRecordAccess) {
+				if (!Util.isEmpty(message, true)) {
+					message += " | ";
+				}
+				message += "@AD_Window_ID@ without record access.";
+				isWithAccess = false;
+			}
+		} else if (request.getDictionaryTypeValue() == DictionaryType.PROCESS_VALUE) {
+			isWithAccess = true;
+			Boolean isRoleAccess = role.getProcessAccess(dictionaryId);
+			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
+				message += "@AD_Process_ID@ without role access.";
+				isWithAccess = false;
+			}
+			boolean isRecordAccess = role.isRecordAccess(
+				I_AD_Process.Table_ID,
+				dictionaryId,
+				MRole.SQL_RO
+			);
+			if (!isRecordAccess) {
+				if (!Util.isEmpty(message, true)) {
+					message += " | ";
+				}
+				message += "@AD_Process_ID@ without record access.";
+				isWithAccess = false;
+			}
+		} else if (request.getDictionaryTypeValue() == DictionaryType.BROWSER_VALUE) {
+			isWithAccess = true;
+			Boolean isRoleAccess = role.getBrowseAccess(dictionaryId);
+			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
+				message += "@AD_Browse_ID@ without role access.";
+				isWithAccess = false;
+			}
+			boolean isRecordAccess = role.isRecordAccess(
+				I_AD_Browse.Table_ID,
+				dictionaryId,
+				MRole.SQL_RO
+			);
+			if (!isRecordAccess) {
+				if (!Util.isEmpty(message, true)) {
+					message += " | ";
+				}
+				message += "@AD_Browse_ID@ without record access.";
+				isWithAccess = false;
+			}
+		} else if (request.getDictionaryTypeValue() == DictionaryType.FORM_VALUE) {
+			isWithAccess = true;
+			Boolean isRoleAccess = role.getFormAccess(dictionaryId);
+			if (isRoleAccess == null || !isRoleAccess.booleanValue()) {
+				message += "@AD_Form_ID@ without role access.";
+				isWithAccess = false;
+			}
+			boolean isRecordAccess = role.isRecordAccess(
+				I_AD_Form.Table_ID,
+				dictionaryId,
+				MRole.SQL_RO
+			);
+			if (!isRecordAccess) {
+				if (!Util.isEmpty(message, true)) {
+					message += " | ";
+				}
+				message += "@AD_Form_ID@ without record access.";
+				isWithAccess = false;
+			}
+		}
+
+		builder.setIsAccess(isWithAccess)
+			.setMessage(
+				ValueManager.validateNull(
+					message
+				)
+			)
+		;
+
+		return builder;
+	}
+
 }

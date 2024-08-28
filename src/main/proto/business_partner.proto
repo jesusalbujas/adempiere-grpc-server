@@ -20,10 +20,7 @@ option java_package = "org.spin.backend.grpc.field.business_partner";
 option java_outer_classname = "ADempiereBusinessPartner";
 
 import "google/api/annotations.proto";
-import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
-
-import "base_data_type.proto";
 
 // Base URL
 // /field/business-partners/
@@ -66,14 +63,18 @@ service BusinessPartnerInfoService {
 message BusinessPartnerInfo {
 	int32 id = 1;
 	string uuid = 2;
-	string value = 3;
-	string name = 4;
-	string name2 = 5;
-	string business_partner_group = 6;
-	string open_balance_amount = 7;
-	string credit_available_amount = 8;
-	string credit_used_amount = 9;
-	string revenue_amount = 10;
+	string display_value = 3;
+	string value = 4;
+	string tax_id = 5;
+	string name = 6;
+	string name2 = 7;
+	string description = 8;
+	string business_partner_group = 9;
+	string open_balance_amount = 10;
+	string credit_available_amount = 11;
+	string credit_used_amount = 12;
+	string revenue_amount = 13;
+	bool is_active = 14;
 }
 
 message ListBusinessPartnersInfoResponse {
@@ -91,24 +92,27 @@ message ListBusinessPartnersInfoRequest {
 	string page_token = 6;
 	string search_value = 7;
 	string context_attributes = 8;
+	bool is_only_active_records = 9;
 	// references
-	string table_name = 9;
-	string column_name = 10;
-	int32 column_id = 11;
-	int32 process_parameter_id = 12;
-	int32 field_id = 13;
-	int32 browse_field_id = 14;
-	int32 reference_id = 15;
+	int32 process_parameter_id = 10;
+	int32 field_id = 11;
+	int32 browse_field_id = 12;
+	int32 reference_id = 13;
+	int32 column_id = 14;
+	string table_name = 15;
+	string column_name = 16;
+	//
+	bool is_without_validation = 17;
 	// custom filters
-	string value = 16;
-	string contact = 17;
-	string phone = 18;
-	string customer = 19;
-	string name = 20;
-	string email = 21;
-	string postal = 22;
-	string is_vendor = 23;
-	string is_customer = 24;
+	string value = 18;
+	string contact = 19;
+	string phone = 20;
+	string customer = 21;
+	string name = 22;
+	string email = 23;
+	string postal_code = 24;
+	string is_vendor = 25;
+	string is_customer = 26;
 }
 
 

@@ -29,9 +29,11 @@ import java.util.logging.Level;
 
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.core.domains.models.I_AD_Field;
+import org.adempiere.core.domains.models.I_C_Invoice;
 import org.adempiere.core.domains.models.I_C_ValidCombination;
 import org.adempiere.core.domains.models.I_Fact_Acct;
 import org.adempiere.core.domains.models.X_C_AcctSchema_Element;
+import org.adempiere.core.domains.models.X_Fact_Acct;
 import org.compiere.model.GridField;
 import org.compiere.model.GridTab;
 import org.compiere.model.GridWindow;
@@ -42,8 +44,10 @@ import org.compiere.model.MAcctSchemaElement;
 import org.compiere.model.MColumn;
 import org.compiere.model.MField;
 import org.compiere.model.MLookupInfo;
+import org.compiere.model.MRefList;
 import org.compiere.model.MRole;
 import org.compiere.model.MTable;
+import org.compiere.model.PO;
 import org.compiere.model.Query;
 import org.compiere.process.DocumentEngine;
 import org.compiere.util.CLogger;
@@ -54,8 +58,6 @@ import org.compiere.util.Msg;
 import org.compiere.util.Util;
 import org.spin.base.db.QueryUtil;
 import org.spin.base.db.WhereClauseUtil;
-import org.spin.base.query.Filter;
-import org.spin.base.query.FilterManager;
 import org.spin.base.util.ContextManager;
 import org.spin.base.util.ConvertUtil;
 import org.spin.base.util.RecordUtil;
@@ -64,12 +66,16 @@ import org.spin.grpc.logic.GeneralLedgerServiceLogic;
 import org.spin.service.grpc.authentication.SessionManager;
 import org.spin.service.grpc.util.db.CountUtil;
 import org.spin.service.grpc.util.db.LimitUtil;
+import org.spin.service.grpc.util.query.Filter;
+import org.spin.service.grpc.util.query.FilterManager;
 import org.spin.service.grpc.util.value.ValueManager;
 import org.spin.backend.grpc.common.Entity;
 import org.spin.backend.grpc.common.ListEntitiesResponse;
 import org.spin.backend.grpc.common.ListLookupItemsResponse;
 import org.spin.backend.grpc.general_ledger.GeneralLedgerGrpc.GeneralLedgerImplBase;
 import org.spin.backend.grpc.general_ledger.AccoutingElement;
+import org.spin.backend.grpc.general_ledger.ExistsAccoutingDocumentRequest;
+import org.spin.backend.grpc.general_ledger.ExistsAccoutingDocumentResponse;
 import org.spin.backend.grpc.general_ledger.GetAccountingCombinationRequest;
 import org.spin.backend.grpc.general_ledger.ListAccountingCombinationsRequest;
 import org.spin.backend.grpc.general_ledger.ListAccountingDocumentsRequest;
@@ -141,7 +147,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 
 		int windowNo = ThreadLocalRandom.current().nextInt(1, 8996 + 1);
 		int AD_Window_ID = 153; // Maintain Account Combinations
-		GridWindowVO wVO = GridWindowVO.create (context, windowNo, AD_Window_ID);
+		GridWindowVO wVO = GridWindowVO.create(context, windowNo, AD_Window_ID);
 		if (wVO == null) {
 			log.warning(
 				Msg.translate(context, "@AccessTableNoView@")
@@ -323,7 +329,8 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			request.getContextAttributes(),
 			request.getPageSize(),
 			request.getPageToken(),
-			request.getSearchValue()
+			request.getSearchValue(),
+			request.getIsOnlyActiveRecords()
 		);
 	}
 
@@ -406,20 +413,20 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 	}
 
 	private ListEntitiesResponse.Builder listAccountingCombinations(ListAccountingCombinationsRequest request) {
-		Map<String, Object> contextAttributesList = ValueManager.convertValuesMapToObjects(request.getContextAttributes().getFieldsMap());
-		if (contextAttributesList.get(MAccount.COLUMNNAME_AD_Org_ID) == null) {
+		// Fill context
+		int windowNo = ThreadLocalRandom.current().nextInt(1, 8996 + 1);
+		ContextManager.setContextWithAttributesFromString(windowNo, Env.getCtx(), request.getContextAttributes());
+
+		int organizationId = request.getOrganizationId();
+		if (request.getOrganizationId() <= 0) {
+			// throw new AdempiereException("@Org0NotAllowed@");
 			throw new AdempiereException("@FillMandatory@ @AD_Org_ID@");
-		} else if ((int) contextAttributesList.get(MAccount.COLUMNNAME_AD_Org_ID) <= 0) {
-			throw new AdempiereException("@Org0NotAllowed@");
 		}
 
-		if (contextAttributesList.get(MAccount.COLUMNNAME_Account_ID) == null || (int) contextAttributesList.get(MAccount.COLUMNNAME_Account_ID) <= 0) {
+		int accountId = request.getAccountId();
+		if (request.getAccountId() <= 0) {
 			throw new AdempiereException("@FillMandatory@ @Account_ID@");
 		}
-
-		//
-		int windowNo = ThreadLocalRandom.current().nextInt(1, 8996 + 1);
-		ContextManager.setContextWithAttributesFromStruct(windowNo, Env.getCtx(), request.getContextAttributes());
 
 		MTable table = MTable.get(Env.getCtx(), this.tableName);
 		StringBuilder sql = new StringBuilder(QueryUtil.getTableQueryWithReferences(table));
@@ -438,8 +445,11 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 		String dynamicWhere = WhereClauseUtil.getWhereClauseFromCriteria(request.getFilters(), this.tableName, params);
 		if (!Util.isEmpty(dynamicWhere, true)) {
 			// includes first AND
-			sqlWithRoleAccess += " AND " + dynamicWhere; 
+			sqlWithRoleAccess += " AND " + dynamicWhere;
 		}
+		sqlWithRoleAccess += " AND (C_ValidCombination.AD_Org_ID = ? AND C_ValidCombination.Account_ID = ?) ";
+		params.add(organizationId);
+		params.add(accountId);
 
 		// add where with search value
 		String parsedSQL = RecordUtil.addSearchValueAndGet(sqlWithRoleAccess, this.tableName, request.getSearchValue(), params);
@@ -476,7 +486,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			if(request == null) {
 				throw new AdempiereException("Object Request Null");
 			}
-			Entity.Builder entity = convertAccountingCombination(request);
+			Entity.Builder entity = saveAccountingCombination(request);
 			responseObserver.onNext(entity.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
@@ -491,31 +501,32 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 		}
 	}
 
-	private Entity.Builder convertAccountingCombination(SaveAccountingCombinationRequest request) {
-		// set context values
+	private Entity.Builder saveAccountingCombination(SaveAccountingCombinationRequest request) {
+		// Fill context
 		int windowNo = ThreadLocalRandom.current().nextInt(1, 8996 + 1);
-		Map<String, Object> contextAttributesList = ValueManager.convertValuesMapToObjects(request.getContextAttributes().getFieldsMap());
-		ContextManager.setContextWithAttributesFromObjectMap(windowNo, Env.getCtx(), contextAttributesList);
-		if (contextAttributesList.get(MAccount.COLUMNNAME_AD_Org_ID) == null) {
-			throw new AdempiereException("@FillMandatory@ @AD_Org_ID@");
-		} else if ((int) contextAttributesList.get(MAccount.COLUMNNAME_AD_Org_ID) <= 0) {
-			throw new AdempiereException("@Org0NotAllowed@");
-		}
-		int organizationId = (int) contextAttributesList.get(MAccount.COLUMNNAME_AD_Org_ID);
+		ContextManager.setContextWithAttributesFromStruct(windowNo, Env.getCtx(), request.getContextAttributes());
 
-		if (contextAttributesList.get(MAccount.COLUMNNAME_Account_ID) == null || (int) contextAttributesList.get(MAccount.COLUMNNAME_Account_ID) <= 0) {
+		final int organizationId = request.getOrganizationId();
+		if (organizationId <= 0) {
+			// throw new AdempiereException("@Org0NotAllowed@");
+			throw new AdempiereException("@FillMandatory@ @AD_Org_ID@");
+		}
+
+		final int accountId = request.getAccountId();
+		if (accountId <= 0) {
 			throw new AdempiereException("@FillMandatory@ @Account_ID@");
 		}
-		int accountId = (int) contextAttributesList.get(MAccount.COLUMNNAME_Account_ID);
 
-		if (contextAttributesList.get(MAccount.COLUMNNAME_C_AcctSchema_ID) == null || (int) contextAttributesList.get(MAccount.COLUMNNAME_C_AcctSchema_ID) <= 0) {
+		final int accountingSchemaId = request.getAccountingSchemaId();
+		if (accountingSchemaId <= 0) {
 			throw new AdempiereException("@FillMandatory@ @C_AcctSchema_ID@");
 		}
-		int accountingSchemaId = (int) contextAttributesList.get(MAccount.COLUMNNAME_C_AcctSchema_ID);
 		MAcctSchema accountingSchema = MAcctSchema.get(Env.getCtx(), accountingSchemaId, null);
 
-		String accountingCombinationAlias = ValueManager.validateNull((String) contextAttributesList.get(MAccount.COLUMNNAME_Alias));
-		
+		final String accountingCombinationAlias = ValueManager.validateNull(
+			request.getAlias()
+		);
+
 		List<MAcctSchemaElement> acctingSchemaElements = Arrays.asList(accountingSchema.getAcctSchemaElements());
 
 		Map<String, Object> attributesList = ValueManager.convertValuesMapToObjects(request.getAttributes().getFieldsMap());
@@ -534,7 +545,9 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			rs = pstmt.executeQuery();
 			if (rs.next()) {
 				accountingCombinationId = rs.getInt(1);
-				accountingAlias = ValueManager.validateNull(rs.getString(2));
+				accountingAlias = ValueManager.validateNull(
+					rs.getString(2)
+				);
 			}
 		}
 		catch (SQLException e) {
@@ -584,7 +597,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			// return;
 		}
 
-		log.config("New");
+		log.config("New Accouting Combination");
 		MAccount accountCombination = setAccountingCombinationByAttributes(clientId, organizationId, accountingSchemaId, accountId, attributesList);
 		
 		Entity.Builder builder = ConvertUtil.convertEntity(accountCombination);
@@ -711,9 +724,9 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 	public void startRePost(StartRePostRequest request, StreamObserver<StartRePostResponse> responseObserver) {
 		try {
 			if(request == null) {
-				throw new AdempiereException("Object Request Null");
+				throw new AdempiereException("StartRePostRequest Null");
 			}
-			StartRePostResponse.Builder builder = convertStartRePost(request);
+			StartRePostResponse.Builder builder = startRePost(request);
 			responseObserver.onNext(builder.build());
 			responseObserver.onCompleted();
 		} catch (Exception e) {
@@ -727,17 +740,16 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			);
 		}
 	}
-	
-	private StartRePostResponse.Builder convertStartRePost(StartRePostRequest request) {
+
+	private StartRePostResponse.Builder startRePost(StartRePostRequest request) {
 		// validate and get table
 		final MTable table = RecordUtil.validateAndGetTable(
 			request.getTableName()
 		);
+
 		// Validate ID
-		if (request.getRecordId() <= 0) {
-			throw new AdempiereException("@Record_ID@ @NotFound@");
-		}
-		int recordId = request.getRecordId();
+		final int recordId = request.getRecordId();
+		RecordUtil.validateRecordId(recordId, table.getAccessLevel());
 		StartRePostResponse.Builder rePostBuilder = StartRePostResponse.newBuilder();
 
 		int clientId = Env.getAD_Client_ID(Env.getCtx());
@@ -752,7 +764,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 		if (!Util.isEmpty(errorMessage, true)) {
 			rePostBuilder.setErrorMsg(errorMessage);
 		}
-		
+
 		return rePostBuilder;
 	}
 
@@ -828,6 +840,83 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 
 
 	@Override
+	public void existsAccoutingDocument(ExistsAccoutingDocumentRequest request, StreamObserver<ExistsAccoutingDocumentResponse> responseObserver) {
+		try {
+			if(request == null) {
+				throw new AdempiereException("ExistsAccoutingDocumentRequest Null");
+			}
+			ExistsAccoutingDocumentResponse.Builder builder = existsAccoutingDocument(request);
+			responseObserver.onNext(builder.build());
+			responseObserver.onCompleted();
+		} catch (Exception e) {
+			log.severe(e.getLocalizedMessage());
+			e.printStackTrace();
+			responseObserver.onError(
+				Status.INTERNAL
+					.withDescription(e.getLocalizedMessage())
+					.withCause(e)
+					.asRuntimeException()
+			);
+		}
+	}
+
+	private ExistsAccoutingDocumentResponse.Builder existsAccoutingDocument(ExistsAccoutingDocumentRequest request) {
+		ExistsAccoutingDocumentResponse.Builder builder = ExistsAccoutingDocumentResponse.newBuilder();
+		MRole role = MRole.getDefault();
+		if (role == null || !role.isShowAcct()) {
+			return builder;
+		}
+
+		// Validate accounting schema
+		int acctSchemaId = request.getAccountingSchemaId();
+		if (acctSchemaId <= 0) {
+			// throw new AdempiereException("@FillMandatory@ @C_AcctSchema_ID@");
+			return builder;
+		}
+
+		// Validate table
+		if (Util.isEmpty(request.getTableName(), true)) {
+			// throw new AdempiereException("@FillMandatory@ @AD_Table_ID@");
+			return builder;
+		}
+		final MTable documentTable = MTable.get(Env.getCtx(), request.getTableName());
+		if (documentTable == null || documentTable.getAD_Table_ID() == 0 || !documentTable.isDocument()) {
+			// throw new AdempiereException("@AD_Table_ID@ @Invalid@");
+			return builder;
+		}
+
+		// Validate record
+		final int recordId = request.getRecordId();
+		if (!RecordUtil.isValidId(recordId, tableName)) {
+			// throw new AdempiereException("@FillMandatory@ @Record_ID@");
+			return builder;
+		}
+		PO record = RecordUtil.getEntity(Env.getCtx(), documentTable.getTableName(), recordId, null);
+		if (record == null || record.get_ID() <= 0) {
+			return builder;
+		}
+
+		// Validate `Posted` column
+		if (record.get_ColumnIndex(I_C_Invoice.COLUMNNAME_Posted) < 0) {
+			// without `Posted` button
+			return builder;
+		}
+
+		// Validate `Processed` column
+		if (record.get_ColumnIndex(I_C_Invoice.COLUMNNAME_Processed) < 0) {
+			return builder;
+		}
+		if (!record.get_ValueAsBoolean(I_C_Invoice.COLUMNNAME_Processed)) {
+			return builder;
+		}
+
+		builder.setIsShowAccouting(true);
+		return builder;
+	}
+
+
+
+	@Override
 	public void listAccountingFacts(ListAccountingFactsRequest request, StreamObserver<ListEntitiesResponse> responseObserver) {
 		try {
 			if(request == null) {
@@ -847,7 +936,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			);
 		}
 	}
-	
+
 	ListEntitiesResponse.Builder listAccountingFacts(ListAccountingFactsRequest request) {
 		int acctSchemaId = request.getAccountingSchemaId();
 		if (acctSchemaId <= 0) {
@@ -861,7 +950,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 		List<Object> filtersList = new ArrayList<>();
 		StringBuilder whereClause = new StringBuilder(" WHERE 1=1 ");
 		whereClause.append(" AND ")
-			.append(table.getTableName())
+			.append(I_Fact_Acct.Table_Name)
 			.append(".")
 			.append(I_Fact_Acct.COLUMNNAME_C_AcctSchema_ID)
 			.append(" = ? ")
@@ -887,9 +976,11 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 				return;
 			}
 
-			String columnName = MAcctSchemaElement.getColumnName(acctSchemaElement.getElementType());
+			String columnName = MAcctSchemaElement.getColumnName(
+				acctSchemaElement.getElementType()
+			);
 
-			Filter elementAccount = conditionsList.stream()
+			Filter elementAccount = conditionsList.parallelStream()
 				.filter(condition -> {
 					return condition.getColumnName().equals(columnName);
 				})
@@ -904,7 +995,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 				return;
 			}
 			whereClause.append(" AND ")
-				.append(table.getTableName())
+				.append(I_Fact_Acct.Table_Name)
 				.append(".")
 				.append(columnName)
 				.append(" = ? ")
@@ -914,13 +1005,18 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 
 		// Posting Type
 		if (!Util.isEmpty(request.getPostingType(), true)) {
+			final String postingType = request.getPostingType();
+			MRefList referenceList = MRefList.get(Env.getCtx(), X_Fact_Acct.POSTINGTYPE_AD_Reference_ID, postingType, null);
+			if (referenceList == null) {
+				throw new AdempiereException("@AD_Ref_List_ID@ @Invalid@: " + postingType);
+			}
 			whereClause.append(" AND ")
-				.append(table.getTableName())
+				.append(I_Fact_Acct.Table_Name)
 				.append(".")
 				.append(I_Fact_Acct.COLUMNNAME_PostingType)
 				.append(" = ? ")
 			;
-			filtersList.add(request.getPostingType());
+			filtersList.add(postingType);
 		}
 
 		// Date
@@ -930,55 +1026,62 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 			whereClause.append(" AND ");
 			if (dateFrom != null && dateTo != null) {
 				whereClause.append("TRUNC(")
-					.append(table.getTableName())
-					.append(".DateAcct, 'DD') BETWEEN ? AND ? ");
+					.append(I_Fact_Acct.Table_Name)
+					.append(".DateAcct, 'DD') BETWEEN ? AND ? ")
+				;
 				filtersList.add(dateFrom);
 				filtersList.add(dateTo);
 			}
 			else if (dateFrom != null) {
 				whereClause.append("TRUNC(")
-					.append(table.getTableName())
-					.append(".DateAcct, 'DD') >= ? ");
+					.append(I_Fact_Acct.Table_Name)
+					.append(".DateAcct, 'DD') >= ? ")
+				;
 				filtersList.add(dateFrom);
 			}
 			else {
 				// DateTo != null
 				whereClause.append("TRUNC(")
-					.append(table.getTableName())
-					.append(".DateAcct, 'DD') <= ? ");
+					.append(I_Fact_Acct.Table_Name)
+					.append(".DateAcct, 'DD') <= ? ")
+				;
 				filtersList.add(dateTo);
 			}
 		}
 
 		// Document
-		String tableName = request.getTableName();
-		if (!Util.isEmpty(tableName, true) && request.getRecordId() > 0) {
-			int tableId = MTable.getTable_ID(tableName);
+		if (!Util.isEmpty(request.getTableName(), true)) {
+			final MTable documentTable = MTable.get(Env.getCtx(), request.getTableName());
+			if (documentTable == null || documentTable.getAD_Table_ID() == 0) {
+				throw new AdempiereException("@AD_Table_ID@ @Invalid@");
+			}
+			// validate record
+			final int recordId = request.getRecordId();
+			RecordUtil.validateRecordId(recordId, documentTable.getAccessLevel());
+
+			// table
 			whereClause.append(" AND ")
-				.append(table.getTableName())
+				.append(I_Fact_Acct.Table_Name)
 				.append(".")
 				.append(I_Fact_Acct.COLUMNNAME_AD_Table_ID)
 				.append(" = ? ")
 			;
-			filtersList.add(tableId);
+			filtersList.add(documentTable.getAD_Table_ID());
 
 			// record
-			int recordId = request.getRecordId();
-			if (recordId > 0) {
-				whereClause.append(" AND ")
-					.append(table.getTableName())
-					.append(".")
-					.append(I_Fact_Acct.COLUMNNAME_Record_ID)
-					.append(" = ? ")
-				;
-				filtersList.add(recordId);
-			}
+			whereClause.append(" AND ")
+				.append(I_Fact_Acct.Table_Name)
+				.append(".")
+				.append(I_Fact_Acct.COLUMNNAME_Record_ID)
+				.append(" = ? ")
+			;
+			filtersList.add(recordId);
 		}
 
 		// Organization
 		if (request.getOrganizationId() > 0) {
 			whereClause.append(" AND ")
-				.append(table.getTableName())
+				.append(I_Fact_Acct.Table_Name)
 				.append(".")
 				.append(I_Fact_Acct.COLUMNNAME_AD_Org_ID)
 				.append(" = ? ")
@@ -990,7 +1093,7 @@ public class GeneralLedger extends GeneralLedgerImplBase {
 		String sqlWithRescriction = sql.toString() + whereClause.toString();
 		String parsedSQL = MRole.getDefault(Env.getCtx(), false)
 			.addAccessSQL(sqlWithRescriction,
-				table.getTableName(),
+				I_Fact_Acct.Table_Name,
 				MRole.SQL_FULLYQUALIFIED,
 				MRole.SQL_RO
 			);

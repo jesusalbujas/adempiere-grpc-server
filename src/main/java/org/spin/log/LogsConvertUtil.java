@@ -60,7 +60,6 @@ import org.spin.backend.grpc.logs.ChangeLog;
 import org.spin.backend.grpc.logs.EntityEventType;
 import org.spin.backend.grpc.logs.EntityLog;
 import org.spin.service.grpc.util.value.BooleanManager;
-import org.spin.service.grpc.util.value.TimeManager;
 import org.spin.service.grpc.util.value.ValueManager;
 
 import com.google.protobuf.Struct;
@@ -160,7 +159,7 @@ public class LogsConvertUtil {
 	 */
 	public static List<EntityLog.Builder> convertRecordLog(List<MChangeLog> recordLogList) {
 		Map<Integer, EntityLog.Builder> indexMap = new HashMap<Integer, EntityLog.Builder>();
-		recordLogList.stream()
+		recordLogList.parallelStream()
 			.filter(recordLog -> {
 				return !indexMap.containsKey(recordLog.getAD_ChangeLog_ID());
 			})
@@ -171,7 +170,7 @@ public class LogsConvertUtil {
 				indexMap.put(recordLog.getAD_ChangeLog_ID(), convertRecordLogHeader(recordLog));
 			});
 		//	convert changes
-		recordLogList.forEach(recordLog -> {
+		recordLogList.parallelStream().forEach(recordLog -> {
 			ChangeLog.Builder changeLog = convertChangeLog(recordLog);
 			EntityLog.Builder recordLogBuilder = indexMap.get(recordLog.getAD_ChangeLog_ID());
 			recordLogBuilder.addChangeLogs(changeLog);
@@ -184,11 +183,11 @@ public class LogsConvertUtil {
 			// 		.reversed()
 			// )
 			.sorted((log1, log2) -> {
-				Timestamp from = TimeManager.convertValueToDate(
+				Timestamp from = ValueManager.getDateFromTimestampDate(
 					log1.getLogDate()
 				);
 
-				Timestamp to = TimeManager.convertValueToDate(
+				Timestamp to = ValueManager.getDateFromTimestampDate(
 					log2.getLogDate()
 				);
 
@@ -283,8 +282,7 @@ public class LogsConvertUtil {
 					displayOldValue = BooleanManager.getBooleanToTranslated(oldValue);
 				}
 				if (newValue != null) {
-					boolean yes = newValue.equals("true") || newValue.equals("Y");
-					displayNewValue = Msg.getMsg(Env.getCtx(), yes ? "Y" : "N");
+					displayNewValue = BooleanManager.getBooleanToTranslated(newValue);
 				}
 			} else if (column.getAD_Reference_ID() == DisplayType.Amount) {
 				if (oldValue != null)

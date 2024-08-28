@@ -16,12 +16,15 @@ package org.spin.grpc.service.dictionary;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 import org.adempiere.core.domains.models.I_AD_ChangeLog;
 import org.adempiere.core.domains.models.I_AD_FieldGroup;
+import org.adempiere.core.domains.models.I_AD_Tab;
 import org.adempiere.core.domains.models.I_AD_Table;
 import org.adempiere.core.domains.models.X_AD_FieldGroup;
 import org.compiere.model.MColumn;
@@ -35,11 +38,12 @@ import org.compiere.model.MTab;
 import org.compiere.model.MTable;
 import org.compiere.model.MValRule;
 import org.compiere.model.MWindow;
-import org.compiere.model.M_Element;
+import org.compiere.model.Query;
+// import org.compiere.model.M_Element;
 import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
 import org.compiere.util.Util;
-import org.spin.backend.grpc.dictionary.ContextInfo;
+// import org.spin.backend.grpc.dictionary.ContextInfo;
 import org.spin.backend.grpc.dictionary.DependentField;
 import org.spin.backend.grpc.dictionary.Field;
 import org.spin.backend.grpc.dictionary.FieldCondition;
@@ -48,14 +52,17 @@ import org.spin.backend.grpc.dictionary.FieldGroup;
 import org.spin.backend.grpc.dictionary.Process;
 import org.spin.backend.grpc.dictionary.Reference;
 import org.spin.backend.grpc.dictionary.Tab;
+import org.spin.backend.grpc.dictionary.Table;
 import org.spin.backend.grpc.dictionary.Window;
 import org.spin.base.db.WhereClauseUtil;
+import org.spin.base.util.AccessUtil;
 import org.spin.base.util.ContextManager;
 import org.spin.base.util.ReferenceUtil;
 import org.spin.dictionary.custom.FieldCustomUtil;
 import org.spin.dictionary.util.WindowUtil;
 import org.spin.model.MADFieldCondition;
 import org.spin.model.MADFieldDefinition;
+import org.spin.service.grpc.util.value.NumberManager;
 import org.spin.service.grpc.util.value.ValueManager;
 import org.spin.util.ASPUtil;
 
@@ -72,14 +79,13 @@ public class WindowConvertUtil {
 			return Window.newBuilder();
 		}
 		window = ASPUtil.getInstance(context).getWindow(window.getAD_Window_ID());
+		if (window == null) {
+			return Window.newBuilder();
+		}
 
 		// TODO: Remove with fix the issue https://github.com/solop-develop/backend/issues/28
 		DictionaryConvertUtil.translateEntity(window);
 
-		ContextInfo.Builder contextInfoBuilder = DictionaryConvertUtil.convertContextInfo(
-			context,
-			window.getAD_ContextInfo_ID()
-		);
 		//	
 		Window.Builder builder = Window.newBuilder()
 			.setId(window.getAD_Window_ID())
@@ -97,50 +103,48 @@ public class WindowConvertUtil {
 				ValueManager.validateNull(window.getWindowType())
 			)
 			.setIsSalesTransaction(window.isSOTrx())
-			.setIsActive(window.isActive())
 		;
-		if(contextInfoBuilder != null) {
-			builder.setContextInfo(contextInfoBuilder.build());
-		}
 		//	With Tabs
 		if(withTabs) {
-			Boolean isShowAcct = MRole.getDefault(context, false).isShowAcct();
+			boolean isShowAcct = MRole.getDefault(context, false).isShowAcct();
 //			List<Tab.Builder> tabListForGroup = new ArrayList<>();
 			List<MTab> tabs = ASPUtil.getInstance(context).getWindowTabs(window.getAD_Window_ID());
-			for(MTab tab : tabs) {
-				if(!tab.isActive()) {
-					continue;
+			if (tabs != null) {
+				for(MTab tab : tabs) {
+					if(tab == null || !tab.isActive()) {
+						continue;
+					}
+					// role without permission to accounting
+					if (tab.isInfoTab() && !isShowAcct) {
+						continue;
+					}
+					Tab.Builder tabBuilder = WindowConvertUtil.convertTab(
+						context,
+						tab,
+						tabs,
+						withTabs
+					);
+					builder.addTabs(tabBuilder.build());
+					//	Get field group
+					// int [] fieldGroupIdArray = getFieldGroupIdsFromTab(tab.getAD_Tab_ID());
+					// if(fieldGroupIdArray != null) {
+					// 	for(int fieldGroupId : fieldGroupIdArray) {
+					// 		Tab.Builder tabFieldGroup = convertTab(context, tab, false);
+					// 		FieldGroup.Builder fieldGroup = convertFieldGroup(context, fieldGroupId);
+					// 		tabFieldGroup.setFieldGroup(fieldGroup);
+					// 		tabFieldGroup.setName(fieldGroup.getName());
+					// 		tabFieldGroup.setDescription("");
+					// 		tabFieldGroup.setUuid(tabFieldGroup.getUuid() + "---");
+					// 		//	Add to list
+					// 		tabListForGroup.add(tabFieldGroup);
+					// 	}
+					// }
 				}
-				// role without permission to accounting
-				if (tab.isInfoTab() && !isShowAcct) {
-					continue;
-				}
-				Tab.Builder tabBuilder = WindowConvertUtil.convertTab(
-					context,
-					tab,
-					tabs,
-					withTabs
-				);
-				builder.addTabs(tabBuilder.build());
-				//	Get field group
-				// int [] fieldGroupIdArray = getFieldGroupIdsFromTab(tab.getAD_Tab_ID());
-				// if(fieldGroupIdArray != null) {
-				// 	for(int fieldGroupId : fieldGroupIdArray) {
-				// 		Tab.Builder tabFieldGroup = convertTab(context, tab, false);
-				// 		FieldGroup.Builder fieldGroup = convertFieldGroup(context, fieldGroupId);
-				// 		tabFieldGroup.setFieldGroup(fieldGroup);
-				// 		tabFieldGroup.setName(fieldGroup.getName());
-				// 		tabFieldGroup.setDescription("");
-				// 		tabFieldGroup.setUuid(tabFieldGroup.getUuid() + "---");
-				// 		//	Add to list
-				// 		tabListForGroup.add(tabFieldGroup);
-				// 	}
+				//	Add Field Group Tabs
+				// for(Tab.Builder tabFieldGroup : tabListForGroup) {
+				// 	builder.addTabs(tabFieldGroup.build());
 				// }
 			}
-			//	Add Field Group Tabs
-			// for(Tab.Builder tabFieldGroup : tabListForGroup) {
-			// 	builder.addTabs(tabFieldGroup.build());
-			// }
 		}
 		//	Add to recent Item
 		org.spin.dictionary.util.DictionaryUtil.addToRecentItem(
@@ -151,6 +155,64 @@ public class WindowConvertUtil {
 		return builder;
 	}
 
+
+	public static Table.Builder convertTable(MTable table) {
+		Table.Builder builder = Table.newBuilder();
+		if (table == null || table.getAD_Table_ID() <= 0) {
+			return builder;
+		}
+		List<String> selectionColums = table.getColumnsAsList(true).stream()
+			.filter(column -> {
+				return column.isSelectionColumn();
+			})
+			.map(column -> {
+				return column.getColumnName();
+			})
+			.collect(Collectors.toList())
+		;
+		List<String> identifierColumns = table.getColumnsAsList(false).stream()
+			.filter(column -> {
+				return column.isIdentifier();
+			})
+			.sorted(Comparator.comparing(MColumn::getSeqNo))
+			.map(column -> {
+				return column.getColumnName();
+			})
+			.collect(Collectors.toList())
+		;
+		builder.setTableName(
+				ValueManager.validateNull(
+					table.getTableName()
+				)
+			)
+			.setAccessLevel(
+				NumberManager.getIntFromString(
+					table.getAccessLevel()
+				)
+			)
+			.addAllKeyColumns(
+				Arrays.asList(
+					table.getKeyColumns()
+				)
+			)
+			.setIsView(
+				table.isView()
+			)
+			.setIsDocument(
+				table.isDocument()
+			)
+			.setIsDeleteable(
+				table.isDeleteable()
+			)
+			.setIsChangeLog(
+				table.isChangeLog()
+			)
+			.addAllIdentifierColumns(identifierColumns)
+			.addAllSelectionColumns(selectionColums)
+		;
+
+		return builder;
+	}
 
 	/**
 	 * Convert Model tab to builder tab
@@ -174,10 +236,6 @@ public class WindowConvertUtil {
 		//	Get table attributes
 		MTable table = MTable.get(context, tab.getAD_Table_ID());
 		boolean isReadOnly = tab.isReadOnly() || table.isView();
-		int contextInfoId = tab.getAD_ContextInfo_ID();
-		if(contextInfoId <= 0) {
-			contextInfoId = table.getAD_ContextInfo_ID();
-		}
 
 		// get where clause including link column and parent column
 		String whereClause = WhereClauseUtil.getTabWhereClauseFromParentTabs(context, tab, tabs);
@@ -195,9 +253,21 @@ public class WindowConvertUtil {
 				ValueManager.validateNull(tab.getDescription())
 			)
 			.setHelp(ValueManager.validateNull(tab.getHelp()))
-			.setAccessLevel(Integer.parseInt(table.getAccessLevel()))
+			.setIsInsertRecord(
+				!isReadOnly && tab.isInsertRecord()
+			)
 			.setCommitWarning(
-				ValueManager.validateNull(tab.getCommitWarning())
+				ValueManager.validateNull(
+					tab.getCommitWarning()
+				)
+			)
+			.setTableName(
+				ValueManager.validateNull(
+					table.getTableName()
+				)
+			)
+			.setTable(
+				convertTable(table)
 			)
 			.setSequence(tab.getSeqNo())
 			.setDisplayLogic(
@@ -207,44 +277,25 @@ public class WindowConvertUtil {
 				ValueManager.validateNull(tab.getReadOnlyLogic())
 			)
 			.setIsAdvancedTab(tab.isAdvancedTab())
-			.setIsDeleteable(table.isDeleteable())
-			.setIsDocument(table.isDocument())
 			.setIsHasTree(tab.isHasTree())
 			.setIsInfoTab(tab.isInfoTab())
-			.setIsInsertRecord(!isReadOnly && tab.isInsertRecord())
 			.setIsReadOnly(isReadOnly)
 			.setIsSingleRow(tab.isSingleRow())
 			.setIsSortTab(tab.isSortTab())
 			.setIsTranslationTab(tab.isTranslationTab())
-			.setIsView(table.isView())
 			.setTabLevel(tab.getTabLevel())
-			.setTableName(
-				ValueManager.validateNull(table.getTableName())
-			)
 			.setParentTabId(parentTabId)
-			.setIsChangeLog(table.isChangeLog())
-			.setIsActive(tab.isActive())
+			.setWindowId(
+				tab.getAD_Window_ID()
+			)
 			.addAllContextColumnNames(
 				ContextManager.getContextColumnNames(
 					Optional.ofNullable(whereClause).orElse("")
 					+ Optional.ofNullable(tab.getOrderByClause()).orElse("")
 				)
 			)
-			.addAllKeyColumns(
-				Arrays.asList(
-					table.getKeyColumns()
-				)
-			)
 		;
 
-		//	For link
-		if(contextInfoId > 0) {
-			ContextInfo.Builder contextInfoBuilder = DictionaryConvertUtil.convertContextInfo(
-				context,
-				contextInfoId
-			);
-			builder.setContextInfo(contextInfoBuilder.build());
-		}
 		//	Parent Link Column Name
 		if(tab.getParent_Column_ID() > 0) {
 			MColumn column = MColumn.get(context, tab.getParent_Column_ID());
@@ -266,8 +317,52 @@ public class WindowConvertUtil {
 				MColumn column = MColumn.get(context, tab.getAD_ColumnSortYesNo_ID());
 				builder.setSortYesNoColumnName(column.getColumnName());
 			}
+
+			//	Parent Column from parent tab
+			MTab originTab = new Query(
+				tab.getCtx(),
+				I_AD_Tab.Table_Name,
+				"AD_Window_ID = ? AND AD_Table_ID = ? AND IsSortTab = ?",
+				null
+			)
+				.setParameters(tab.getAD_Window_ID(), table.getAD_Table_ID(), false)
+				.first()
+			;
+			if (originTab != null && originTab.getAD_Tab_ID() > 0) {
+				// is same table and columns
+				List<MColumn> columnsList = table.getColumnsAsList();
+				MColumn parentColumn = columnsList.parallelStream()
+					.filter(column -> {
+						return column.isParent();
+					})
+					.findFirst()
+					.orElse(null)
+				;
+				if (parentColumn != null && parentColumn.getAD_Column_ID() > 0) {
+					// filter_column_name
+					builder.setFilterColumnName(
+						ValueManager.validateNull(
+							parentColumn.getColumnName()
+						)
+					);
+				}
+			}
 		}
+
 		//	Process
+		if (tab.getAD_Process_ID() > 0) {
+			// Record/Role access
+			boolean isWithAccess = AccessUtil.isProcessAccess(MRole.getDefault(), tab.getAD_Process_ID());
+			if (isWithAccess) {
+				Process.Builder processAssociated = ProcessConvertUtil.convertProcess(
+					context,
+					tab.getAD_Process_ID(),
+					false
+				);
+				builder.setProcess(processAssociated);
+			}
+		}
+
 		List<MProcess> processList = WindowUtil.getProcessActionFromTab(context, tab);
 		if(processList != null && processList.size() > 0) {
 			for(MProcess process : processList) {
@@ -280,8 +375,14 @@ public class WindowConvertUtil {
 				builder.addProcesses(processBuilder.build());
 			}
 		}
+
+		//	Fields
 		if(withFields) {
-			for(MField field : ASPUtil.getInstance(context).getWindowFields(tab.getAD_Tab_ID())) {
+			List<MField> fieldsList = ASPUtil.getInstance(context).getWindowFields(tab.getAD_Tab_ID());
+			for(MField field : fieldsList) {
+				if (field == null) {
+					continue;
+				}
 				Field.Builder fieldBuilder = WindowConvertUtil.convertField(
 					context,
 					field,
@@ -307,7 +408,7 @@ public class WindowConvertUtil {
 
 		// Column reference
 		MColumn column = MColumn.get(context, field.getAD_Column_ID());
-		M_Element element = new M_Element(context, column.getAD_Element_ID(), null);
+		// M_Element element = new M_Element(context, column.getAD_Element_ID(), null);
 		String defaultValue = field.getDefaultValue();
 		if(Util.isEmpty(defaultValue)) {
 			defaultValue = column.getDefaultValue();
@@ -340,14 +441,12 @@ public class WindowConvertUtil {
 			.setCallout(
 				ValueManager.validateNull(column.getCallout())
 			)
-			.setColumnId(column.getAD_Column_ID())
 			.setColumnName(
 				ValueManager.validateNull(column.getColumnName())
 			)
-			.setElementId(element.getAD_Element_ID())
-			.setElementName(
-				ValueManager.validateNull(element.getColumnName())
-			)
+			// .setElementName(
+			// 	ValueManager.validateNull(element.getColumnName())
+			// )
 			.setColumnSql(
 				ValueManager.validateNull(column.getColumnSQL())
 			)
@@ -388,6 +487,7 @@ public class WindowConvertUtil {
 				ValueManager.validateNull(column.getReadOnlyLogic())
 			)
 			.setSequence(field.getSeqNo())
+			.setSeqNoGrid(field.getSeqNoGrid())
 			.setValueMax(
 				ValueManager.validateNull(column.getValueMax())
 			)
@@ -395,7 +495,6 @@ public class WindowConvertUtil {
 				ValueManager.validateNull(column.getValueMin())
 			)
 			.setFieldLength(column.getFieldLength())
-			.setIsActive(field.isActive())
 			.addAllContextColumnNames(
 				ContextManager.getContextColumnNames(
 					Optional.ofNullable(field.getDefaultValue()).orElse(
@@ -406,13 +505,13 @@ public class WindowConvertUtil {
 		;
 
 		//	Context Info
-		if(field.getAD_ContextInfo_ID() > 0) {
-			ContextInfo.Builder contextInfoBuilder = DictionaryConvertUtil.convertContextInfo(
-				context,
-				field.getAD_ContextInfo_ID()
-			);
-			builder.setContextInfo(contextInfoBuilder.build());
-		}
+		// if(field.getAD_ContextInfo_ID() > 0) {
+		// 	ContextInfo.Builder contextInfoBuilder = DictionaryConvertUtil.convertContextInfo(
+		// 		context,
+		// 		field.getAD_ContextInfo_ID()
+		// 	);
+		// 	builder.setContextInfo(contextInfoBuilder.build());
+		// }
 		//	Process
 		if(column.getAD_Process_ID() > 0) {
 			MProcess process = MProcess.get(context, column.getAD_Process_ID());
@@ -452,14 +551,14 @@ public class WindowConvertUtil {
 			}
 		}
 
-		//	Field Definition
-		if(field.getAD_FieldDefinition_ID() > 0) {
-			FieldDefinition.Builder fieldDefinitionBuilder = WindowConvertUtil.convertFieldDefinition(
-				context,
-				field.getAD_FieldDefinition_ID()
-			);
-			builder.setFieldDefinition(fieldDefinitionBuilder);
-		}
+		// //	Field Definition
+		// if(field.getAD_FieldDefinition_ID() > 0) {
+		// 	FieldDefinition.Builder fieldDefinitionBuilder = WindowConvertUtil.convertFieldDefinition(
+		// 		context,
+		// 		field.getAD_FieldDefinition_ID()
+		// 	);
+		// 	builder.setFieldDefinition(fieldDefinitionBuilder);
+		// }
 		//	Field Group
 		if(field.getAD_FieldGroup_ID() > 0) {
 			FieldGroup.Builder fieldGroup = WindowConvertUtil.convertFieldGroup(
@@ -506,27 +605,27 @@ public class WindowConvertUtil {
 		}
 
 		int columnId = field.getAD_Column_ID();
-		String parentColumnName = MColumn.getColumnName(Env.getCtx(), columnId);
+		String parentColumnName = MColumn.getColumnName(field.getCtx(), columnId);
 
-		MTab parentTab = MTab.get(Env.getCtx(), field.getAD_Tab_ID());
-		List<MTab> tabsList = ASPUtil.getInstance(Env.getCtx()).getWindowTabs(parentTab.getAD_Window_ID());
-		if (tabsList == null) {
+		MTab parentTab = MTab.get(field.getCtx(), field.getAD_Tab_ID());
+		List<MTab> tabsList = ASPUtil.getInstance(field.getCtx()).getWindowTabs(parentTab.getAD_Window_ID());
+		if (tabsList == null || tabsList.isEmpty()) {
 			return depenentFieldsList;
 		}
 		tabsList.stream()
 			.filter(currentTab -> {
 				// transaltion tab is not rendering on client
-				return currentTab.isActive() && !currentTab.isTranslationTab();
+				return currentTab.isActive() && !currentTab.isTranslationTab() && !currentTab.isSortTab();
 			})
 			.forEach(tab -> {
 				List<MField> fieldsList = ASPUtil.getInstance().getWindowFields(tab.getAD_Tab_ID());
-				if (fieldsList == null) {
+				if (fieldsList == null || fieldsList.isEmpty()) {
 					return;
 				}
 
 				fieldsList.stream()
 					.filter(currentField -> {
-						if (!currentField.isActive()) {
+						if (currentField == null || !currentField.isActive()) {
 							return false;
 						}
 						// Display Logic
@@ -539,13 +638,13 @@ public class WindowConvertUtil {
 						}
 						// Dynamic Validation
 						if (currentField.getAD_Val_Rule_ID() > 0) {
-							MValRule validationRule = MValRule.get(Env.getCtx(), currentField.getAD_Val_Rule_ID());
+							MValRule validationRule = MValRule.get(currentField.getCtx(), currentField.getAD_Val_Rule_ID());
 							if (ContextManager.isUseParentColumnOnContext(parentColumnName, validationRule.getCode())) {
 								return true;
 							}
 						}
 
-						MColumn currentColumn = MColumn.get(Env.getCtx(), currentField.getAD_Column_ID());
+						MColumn currentColumn = MColumn.get(currentField.getCtx(), currentField.getAD_Column_ID());
 						// Default Value of Column
 						if (ContextManager.isUseParentColumnOnContext(parentColumnName, currentColumn.getDefaultValue())) {
 							return true;
@@ -560,7 +659,7 @@ public class WindowConvertUtil {
 						}
 						// Dynamic Validation
 						if (currentColumn.getAD_Val_Rule_ID() > 0) {
-							MValRule validationRule = MValRule.get(Env.getCtx(), currentColumn.getAD_Val_Rule_ID());
+							MValRule validationRule = MValRule.get(currentField.getCtx(), currentColumn.getAD_Val_Rule_ID());
 							if (ContextManager.isUseParentColumnOnContext(parentColumnName, validationRule.getCode())) {
 								return true;
 							}
@@ -569,15 +668,15 @@ public class WindowConvertUtil {
 					})
 					.forEach(currentField -> {
 						DependentField.Builder builder = DependentField.newBuilder()
-							.setContainerId(
+							.setParentId(
 								tab.getAD_Tab_ID()
 							)
-							.setContainerUuid(
+							.setParentUuid(
 								ValueManager.validateNull(
 									tab.getUUID()
 								)
 							)
-							.setContainerName(
+							.setParentName(
 								ValueManager.validateNull(
 									tab.getName()
 								)
@@ -592,7 +691,7 @@ public class WindowConvertUtil {
 							)
 						;
 
-						String currentColumnName = MColumn.getColumnName(Env.getCtx(), currentField.getAD_Column_ID());
+						String currentColumnName = MColumn.getColumnName(currentField.getCtx(), currentField.getAD_Column_ID());
 						builder.setColumnName(
 							ValueManager.validateNull(
 								currentColumnName
@@ -639,7 +738,6 @@ public class WindowConvertUtil {
 			.setFieldGroupType(
 				ValueManager.validateNull(fieldGroup.getFieldGroupType())
 			)
-			.setIsActive(fieldGroup.isActive())
 		;
 		return builder;
 	}
@@ -685,7 +783,6 @@ public class WindowConvertUtil {
 				.setStylesheet(
 					ValueManager.validateNull(condition.getStylesheet())
 				)
-				.setIsActive(fieldDefinition.isActive())
 			;
 			//	Add to parent
 			builder.addConditions(fieldConditionBuilder);

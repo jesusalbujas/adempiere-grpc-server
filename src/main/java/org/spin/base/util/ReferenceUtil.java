@@ -74,21 +74,22 @@ public class ReferenceUtil {
 
 	/**
 	 * Validate reference
-	 * TODO: Improve support to ID reference to get display column
 	 * TODO: Add support to Resource Assigment reference to get display column
-	 * @param referenceId
-	 * @param referenceValueId
-	 * @param columnName
+	 * @param displayTypeId
 	 * @return
 	 */
-	public static boolean validateReference(int referenceId) {
-		if (DisplayType.isLookup(referenceId) || DisplayType.Account == referenceId
-			|| DisplayType.ID == referenceId
-			|| DisplayType.Location == referenceId || DisplayType.PAttribute == referenceId
-			|| DisplayType.Locator == referenceId) {
+	public static boolean validateReference(int displayTypeId) {
+		if (
+			DisplayType.isLookup(displayTypeId)
+			|| DisplayType.Account == displayTypeId
+			|| DisplayType.ID == displayTypeId
+			|| DisplayType.Location == displayTypeId
+			|| DisplayType.Locator == displayTypeId
+			|| DisplayType.PAttribute == displayTypeId
+		) {
 			return true;
 		}
-		if(DisplayType.Image == referenceId) {
+		if(DisplayType.Image == displayTypeId) {
 			return AttachmentUtil.getInstance()
 				.isValidForClient(
 					Env.getAD_Client_ID(Env.getCtx())
@@ -110,7 +111,7 @@ public class ReferenceUtil {
 		if(!validateReference(referenceId)) {
 			return null;
 		}
-		String key = referenceId + "|" + referenceValueId + "|" + columnName + "|" + language;
+		final String key = referenceId + "|" + referenceValueId + "|" + columnName + "|" + language;
 		ReferenceInfo referenceInfo = referenceInfoMap.get(key);
 		Language languageValue = Language.getLanguage(Env.getAD_Language(Env.getCtx()));
 		if (referenceInfo != null) {
@@ -120,51 +121,85 @@ public class ReferenceUtil {
 
 		// new instance generated
 		referenceInfo = new ReferenceInfo();
+		referenceInfo.setColumnName(columnName);
+
 		if (DisplayType.ID == referenceId) {
-			// TODO: Improve regex with count records
-			if (columnName.equals(tableName + "_ID")) {
+			MTable table = MTable.get(context, tableName);
+			if (table == null) {
 				return null;
 			}
-			referenceInfo.setColumnName(columnName);
-			String displayColumn = MLookupFactory.getLookup_TableDirEmbed(languageValue, columnName, tableName);
+			String[] keyColumns = table.getKeyColumns();
+			if (keyColumns == null || keyColumns.length > 1) {
+				// traslated or accouting table
+				return null;
+			}
+
+			final String baseColumnToReplace = "REPLACE_COLUMN_TO_REPLACE";
+			String displayColumn = MLookupFactory.getLookup_TableDirEmbed(languageValue, columnName, tableName, baseColumnToReplace);
 			// No Identifier records
 			if (Util.isEmpty(displayColumn, true)) {
 				// displayColumn = tableName + "." + columnName;
 				return null;
 			}
+			final String tableAlias = tableName + "_" + columnName;
+
+			String regexMainTable = "(?<from>\\bFROM\\b)\\s+(?<table>" + tableName + "\\b)\\s+"
+				+ "(?<restriction>\\bWHERE\\b|\\bORDER\\s+BY\\b|((LEFT|INNER|RIGHT|FULL|SELF|CROSS)\\s+(OUTER\\s+){0,1}){0,1}JOIN)"
+			;
+			Pattern patternMainTable = Pattern.compile(
+				regexMainTable,
+				Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+			);
+			Matcher matcherMainTable = patternMainTable
+				.matcher(displayColumn);
+			if (matcherMainTable.find()) {
+				displayColumn = displayColumn.replaceAll(
+					regexMainTable,
+					// "FROM " + tableName + " AS " + tableAlias + " " + matcherMainTable.group(3)
+					"FROM " + tableName + " AS " + tableAlias + " " + matcherMainTable.group("restriction")
+				);
+			} else {
+				displayColumn = displayColumn.replace(
+					"FROM " + tableName,
+					"FROM " + tableName + " AS " + tableAlias
+				);
+			}
+			displayColumn = displayColumn.replace(
+				tableName + "." + baseColumnToReplace,
+				tableAlias + "." + columnName
+			);
+
+			referenceInfo.setTableName(tableName);
+			referenceInfo.setTableAlias(tableAlias);
 			referenceInfo.setDisplayColumnValue("(" + displayColumn + ")");
 			referenceInfo.setHasJoinValue(false);
 		} else if (DisplayType.Account == referenceId) {
 			//	Add Display
-			referenceInfo.setColumnName(columnName);
 			referenceInfo.setTableName(I_C_ValidCombination.Table_Name);
 			referenceInfo.setDisplayColumnValue(I_C_ValidCombination.COLUMNNAME_Combination);
 			referenceInfo.setTableAlias(I_C_ValidCombination.Table_Name + "_" + columnName);
 			referenceInfo.setJoinColumnName(I_C_ValidCombination.COLUMNNAME_C_ValidCombination_ID);
 		} else if (DisplayType.PAttribute == referenceId) {
 			//  Add Display
-			referenceInfo.setColumnName(columnName);
 			referenceInfo.setTableName(I_M_AttributeSetInstance.Table_Name);
 			referenceInfo.setDisplayColumnValue(I_M_AttributeSetInstance.COLUMNNAME_Description);
 			referenceInfo.setTableAlias(I_M_AttributeSetInstance.Table_Name + "_" + columnName);
 			referenceInfo.setJoinColumnName(I_M_AttributeSetInstance.COLUMNNAME_M_AttributeSetInstance_ID);
 		} else if (DisplayType.Image == referenceId) {
-			referenceInfo.setColumnName(columnName);
-			String displaColumn = getDisplayColumnSQLImage(tableName, columnName);
+			final String displaColumn = getDisplayColumnSQLImage(tableName, columnName);
 			referenceInfo.setDisplayColumnValue("(" + displaColumn + ")");
 			referenceInfo.setHasJoinValue(false);
 		} else if (DisplayType.Location == referenceId) {
 			//  Add Display
-			referenceInfo.setColumnName(columnName);
 			referenceInfo.setTableName(I_C_Location.Table_Name);
-			String displaColumn = getDisplayColumnSQLLocation(tableName, columnName);
+			final String displaColumn = getDisplayColumnSQLLocation(tableName, columnName);
 			referenceInfo.setDisplayColumnValue("(" + displaColumn + ")");
 			referenceInfo.setHasJoinValue(false);
 		} else if(DisplayType.TableDir == referenceId
 				|| referenceValueId == 0) {
 			//	Add Display
-			referenceInfo.setColumnName(columnName);
-			referenceInfo.setDisplayColumnValue("(" + MLookupFactory.getLookup_TableDirEmbed(languageValue, columnName, tableName) + ")");
+			final String displayColumn = MLookupFactory.getLookup_TableDirEmbed(languageValue, columnName, tableName);
+			referenceInfo.setDisplayColumnValue("(" + displayColumn + ")");
 			referenceInfo.setHasJoinValue(false);
 		} else {
 			//	Get info
@@ -173,7 +208,6 @@ public class ReferenceUtil {
 				return referenceInfo;
 			}
 
-			referenceInfo.setColumnName(columnName);
 			String displayColumn = "";
 			if (!Util.isEmpty(lookupInfo.DisplayColumn, true)) {
 				displayColumn = (lookupInfo.DisplayColumn).replace(lookupInfo.TableName + ".", "");
@@ -187,7 +221,7 @@ public class ReferenceUtil {
 			if (!Util.isEmpty(displayColumn)) {
 				referenceInfo.setDisplayColumnValue(displayColumn);
 			}
-			referenceInfo.setJoinColumnName((lookupInfo.KeyColumn == null? "": lookupInfo.KeyColumn).replace(lookupInfo.TableName + ".", ""));
+			referenceInfo.setJoinColumnName((lookupInfo.KeyColumn == null ? "" : lookupInfo.KeyColumn).replace(lookupInfo.TableName + ".", ""));
 			referenceInfo.setTableName(lookupInfo.TableName);
 			if(DisplayType.List == referenceId
 					&& referenceValueId != 0) {

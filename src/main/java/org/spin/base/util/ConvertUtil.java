@@ -66,6 +66,7 @@ import org.spin.backend.grpc.pos.RMALine;
 import org.spin.backend.grpc.pos.Shipment;
 import org.spin.backend.grpc.user_interface.ChatEntry;
 import org.spin.backend.grpc.user_interface.ModeratorStatus;
+import org.spin.base.interim.ContextTemporaryWorkaround;
 import org.spin.grpc.service.FileManagement;
 import org.spin.grpc.service.TimeControl;
 import org.spin.grpc.service.core_functionality.CoreFunctionalityConvert;
@@ -228,6 +229,13 @@ public class ConvertUtil {
 				builderValue.build()
 			);
 		}
+
+		// TODO: Temporary Workaround
+		values = ContextTemporaryWorkaround.setContextAsUnknowColumn(
+			poInfo.getTableName(),
+			values
+		);
+
 		builder.setValues(values);
 		//	
 		return builder;
@@ -950,19 +958,25 @@ public class ConvertUtil {
 		if (orderLine.getM_Product_ID() > 0) {
 			MProduct product = MProduct.get(Env.getCtx(), orderLine.getM_Product_ID());
 			List<MUOMConversion> productsConversion = Arrays.asList(MUOMConversion.getProductConversions(Env.getCtx(), product.getM_Product_ID()));
-			uom = productsConversion.stream()
+			Optional<MUOMConversion> maybeUom = productsConversion.parallelStream()
 				.filter(productConversion -> {
 					return productConversion.getC_UOM_To_ID() == orderLine.getC_UOM_ID();
 				})
 				.findFirst()
-				.get();
-	
-			productUom = productsConversion.stream()
+			;
+			if (maybeUom.isPresent()) {
+				uom = maybeUom.get();
+			}
+
+			Optional<MUOMConversion> maybeProductUom = productsConversion.parallelStream()
 				.filter(productConversion -> {
 					return productConversion.getC_UOM_To_ID() == product.getC_UOM_ID();
 				})
 				.findFirst()
-				.get();
+			;
+			if (maybeProductUom.isPresent()) {
+				productUom = maybeProductUom.get();
+			}
 		} else {
 			uom = new MUOMConversion(Env.getCtx(), 0, null);
 			uom.setC_UOM_ID(orderLine.getC_UOM_ID());
@@ -1227,19 +1241,25 @@ public class ConvertUtil {
 		if (orderLine.getM_Product_ID() > 0) {
 			MProduct product = MProduct.get(Env.getCtx(), orderLine.getM_Product_ID());
 			List<MUOMConversion> productsConversion = Arrays.asList(MUOMConversion.getProductConversions(Env.getCtx(), product.getM_Product_ID()));
-			uom = productsConversion.stream()
+			Optional<MUOMConversion> maybeUom = productsConversion.parallelStream()
 				.filter(productConversion -> {
 					return productConversion.getC_UOM_To_ID() == orderLine.getC_UOM_ID();
 				})
 				.findFirst()
-				.get();
-	
-			productUom = productsConversion.stream()
+			;
+			if (maybeUom.isPresent()) {
+				uom = maybeUom.get();
+			}
+
+			Optional<MUOMConversion> maybeProductUom = productsConversion.parallelStream()
 				.filter(productConversion -> {
 					return productConversion.getC_UOM_To_ID() == product.getC_UOM_ID();
 				})
 				.findFirst()
-				.get();
+			;
+			if (maybeProductUom.isPresent()) {
+				productUom = maybeProductUom.get();
+			}
 		} else {
 			uom = new MUOMConversion(Env.getCtx(), 0, null);
 			uom.setC_UOM_ID(orderLine.getC_UOM_ID());

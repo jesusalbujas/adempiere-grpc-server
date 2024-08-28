@@ -14,6 +14,7 @@
  ************************************************************************************/
 package org.spin.grpc.service.form.issue_management;
 
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -630,6 +631,7 @@ public class IssueManagement extends IssueManagementImplBase {
 				.setParameters(requestRecord.getR_Request_ID())
 				.getIDsAsList()
 				// .list(MRequestAction.class);
+				.parallelStream()
 				.forEach(requestActionId -> {
 					MRequestAction requestAction = new MRequestAction(Env.getCtx(), requestActionId, null);
 					requestAction.deleteEx(true);
@@ -645,6 +647,7 @@ public class IssueManagement extends IssueManagementImplBase {
 				.setParameters(requestRecord.getR_Request_ID())
 				.getIDsAsList()
 				// .list(MRequestUpdate.class);
+				.parallelStream()
 				.forEach(requestUpdateId -> {
 					MRequestUpdate requestUpdate = new MRequestUpdate(Env.getCtx(), requestUpdateId, null);
 					requestUpdate.deleteEx(true);
@@ -737,6 +740,7 @@ public class IssueManagement extends IssueManagementImplBase {
 			// .setLimit(limit, offset)
 			.getIDsAsList()
 			// .list(X_R_RequestUpdate.class)
+			.parallelStream()
 			.forEach(requestUpdateId -> {
 				IssueComment.Builder builder = IssueManagementConvertUtil.convertRequestUpdate(requestUpdateId);
 				issueCommentsList.add(builder);
@@ -747,6 +751,7 @@ public class IssueManagement extends IssueManagementImplBase {
 			// .setLimit(limit, offset)
 			.getIDsAsList()
 			// .list(MRequestAction.class)
+			.parallelStream()
 			.forEach(requestActionId -> {
 				IssueComment.Builder builder = IssueManagementConvertUtil.convertRequestAction(requestActionId);
 				issueCommentsList.add(builder);
@@ -754,8 +759,28 @@ public class IssueManagement extends IssueManagementImplBase {
 			});
 
 		issueCommentsList.stream()
-			// TODO: Add support here... Other way?
-			// .sorted(Comparator.comparing(IssueComment.Builder::getCreated))
+			.sorted((comment1, comment2) -> {
+				Timestamp from = ValueManager.getDateFromTimestampDate(
+					comment1.getCreated()
+				);
+
+				Timestamp to = ValueManager.getDateFromTimestampDate(
+					comment2.getCreated()
+				);
+
+				if (from == null || to == null) {
+					// prevent Null Pointer Exception
+					if (from == null && to == null) {
+						return 0;
+					} else if (from == null) {
+						return -1;
+					} else if (to == null) {
+						return 1;
+					}
+				}
+				int compared = to.compareTo(from);
+				return compared;
+			})
 			.forEach(issueComment -> {
 				builderList.addRecords(issueComment);
 			});

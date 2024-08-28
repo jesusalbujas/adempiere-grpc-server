@@ -41,7 +41,6 @@ import org.compiere.model.MMenu;
 import org.compiere.model.MPInstance;
 import org.compiere.model.MProcess;
 import org.compiere.model.MProcessPara;
-import org.compiere.model.MRole;
 import org.compiere.model.MTable;
 import org.compiere.model.PO;
 import org.compiere.model.Query;
@@ -68,15 +67,18 @@ import org.spin.backend.grpc.common.ProcessLog;
 import org.spin.backend.grpc.common.RunBusinessProcessRequest;
 import org.spin.backend.grpc.common.UpdateEntityRequest;
 import org.spin.base.db.WhereClauseUtil;
-import org.spin.base.query.SortingManager;
+import org.spin.base.util.AccessUtil;
 import org.spin.base.util.ConvertUtil;
 import org.spin.base.util.RecordUtil;
 import org.spin.base.workflow.WorkflowUtil;
+import org.spin.dictionary.util.BrowserUtil;
 import org.spin.dictionary.util.DictionaryUtil;
+import org.spin.grpc.service.ui.BrowserLogic;
 import org.spin.service.grpc.authentication.SessionManager;
 // import org.spin.service.grpc.util.db.CountUtil;
 import org.spin.service.grpc.util.db.LimitUtil;
 import org.spin.service.grpc.util.db.ParameterUtil;
+import org.spin.service.grpc.util.query.SortingManager;
 import org.spin.service.grpc.util.value.ValueManager;
 
 import com.google.protobuf.Empty;
@@ -208,9 +210,9 @@ public class BusinessData extends BusinessDataImplBase {
 			throw new AdempiereException("@AD_Process_ID@ @NotFound@");
 		}
 
-		// Role access
-		Boolean isWithAccess = MRole.getDefault().getProcessAccess(process.getAD_Process_ID());
-		if(isWithAccess == null || !isWithAccess.booleanValue()) {
+		// Record/Role access
+		boolean isWithAccess = AccessUtil.isProcessAccess(process.getAD_Process_ID());
+		if(!isWithAccess) {
 			if (process.isReport()) {
 				throw new AdempiereException("@AccessCannotReport@");
 			}
@@ -282,11 +284,29 @@ public class BusinessData extends BusinessDataImplBase {
 			}
 			List<Integer> selectionKeys = new ArrayList<>();
 			LinkedHashMap<Integer, LinkedHashMap<String, Object>> selection = new LinkedHashMap<>();
-			for(KeyValueSelection selectionKey : request.getSelectionsList()) {
+
+			List<KeyValueSelection> selectionsList = request.getSelectionsList();
+			if (request.getIsAllSelection()) {
+				// get all records march with browser criteria
+				selectionsList = BrowserLogic.getAllSelectionByCriteria(
+					request.getBrowserId(),
+					request.getBrowserContextAttributes(),
+					request.getCriteriaFilters()
+				);
+			}
+			if (selectionsList == null || selectionsList.isEmpty()) {
+				throw new AdempiereException("@AD_Browse_ID@ @FillMandatory@ @Selection@");
+			}
+
+			for(KeyValueSelection selectionKey : selectionsList) {
 				selectionKeys.add(selectionKey.getSelectionId());
 				if(selectionKey.getValues().getFieldsCount() > 0) {
+					Map<String, Integer> displayTypeColumns = BrowserUtil.getBrowseFieldsSelectionDisplayType(browse);
 					LinkedHashMap<String, Object> entities = new LinkedHashMap<String, Object>(
-						ValueManager.convertValuesMapToObjects(selectionKey.getValues().getFieldsMap())
+						ValueManager.convertValuesMapToObjects(
+							selectionKey.getValues().getFieldsMap(),
+							displayTypeColumns
+						)
 					);
 					selection.put(
 						selectionKey.getSelectionId(),
@@ -310,10 +330,15 @@ public class BusinessData extends BusinessDataImplBase {
 		//	get document action
 		String documentAction = null;
 		//	Parameters
-		Map<String, Value> parameters = new HashMap<String, Value>();
-		parameters.putAll(request.getParameters().getFieldsMap());
+		Map<String, Value> parametersList = new HashMap<String, Value>();
+		parametersList.putAll(request.getParameters().getFieldsMap());
 		if(request.getParameters().getFieldsCount() > 0) {
-			for(Entry<String, Value> parameter : parameters.entrySet().stream().filter(parameterValue -> !parameterValue.getKey().endsWith("_To")).collect(Collectors.toList())) {
+			List<Entry<String, Value>> parametersListWithoutRange = parametersList.entrySet().parallelStream()
+				.filter(parameterValue -> {
+					return !parameterValue.getKey().endsWith("_To");
+				})
+				.collect(Collectors.toList());
+			for(Entry<String, Value> parameter : parametersListWithoutRange) {
 				final String columnName = parameter.getKey();
 				int displayTypeId = -1;
 				MProcessPara processParameter = new Query(
@@ -335,7 +360,11 @@ public class BusinessData extends BusinessDataImplBase {
 				} else {
 					value = ValueManager.getObjectFromValue(parameter.getValue());
 				}
-				Optional<Entry<String, Value>> maybeToParameter = parameters.entrySet().stream().filter(parameterValue -> parameterValue.getKey().equals(parameter.getKey() + "_To")).findFirst();
+				Optional<Entry<String, Value>> maybeToParameter = parametersList.entrySet().parallelStream()
+					.filter(parameterValue -> {
+						return parameterValue.getKey().equals(parameter.getKey() + "_To");
+					})
+					.findFirst();
 				if(value != null) {
 					if(maybeToParameter.isPresent()) {
 						Object valueTo = null;

@@ -145,44 +145,44 @@ public class ReferenceInfo {
 		this.joinColumnName = joinColumnName;
 		setHasJoinValue(true);
 	}
-	
-	private String getTableName() {
+
+	public String getTableName() {
 		return getTableName(false);
 	}
-	
-	private String getTableName(boolean translated) {
+
+	public String getTableName(boolean translated) {
 		if(translated) {
 			return tableName + "_Trl";
 		}
 		return tableName;
 	}
-	
+
 	public void setTableName(String tableName) {
 		this.tableName = tableName;
 	}
-	
-	private String getTableAlias(boolean translated) {
+
+	public String getTableAlias(boolean translated) {
 		if(translated) {
 			return tableAlias + "_Trl";
 		}
 		return tableAlias;
 	}
-	
-	private String getTableAlias() {
+
+	public String getTableAlias() {
 		return getTableAlias(false);
 	}
-	
+
 	public void setTableAlias(String tableAlias) {
 		this.tableAlias = tableAlias;
 	}
-	
+
 	/**
 	 * Without column name
 	 */
 	private void buildAlias() {
 		buildAlias(null);
 	}
-	
+
 	/**
 	 * Create alias
 	 */
@@ -200,7 +200,7 @@ public class ReferenceInfo {
 			}
 		}
 	}
-	
+
 	/**
 	 * Get display value for Query
 	 * @return
@@ -260,14 +260,64 @@ public class ReferenceInfo {
 		return join.toString();
 	}
 
+	static public MLookupInfo getInfoFromRequest(
+		int displayTypeId,
+		int fieldId, int processParameterId, int browseFieldId,
+		int columnId, String columnName, String tableName
+	) {
+		return getInfoFromRequest(
+			displayTypeId,
+			fieldId, processParameterId, browseFieldId,
+			columnId, columnName, tableName,
+			0, null, false
+		);
+	}
+
+	static public MLookupInfo getInfoFromRequest(
+		int displayTypeId,
+		int fieldId, int processParameterId, int browseFieldId,
+		int columnId, String columnName, String tableName,
+		boolean isWithoutValidation
+	) {
+		return getInfoFromRequest(
+			displayTypeId,
+			fieldId, processParameterId, browseFieldId,
+			columnId, columnName, tableName,
+			0, null, isWithoutValidation
+		);
+	}
+
 	/**
 	 * Get reference Info from request
 	 * @param request
 	 * @return
 	 */
-	static public MLookupInfo getInfoFromRequest(int referenceId, int fieldId, int processParameterId, int browseFieldId, int columnId, String columnName, String tableName) {
+	static public MLookupInfo getInfoFromRequest(
+		int displayTypeId,
+		int fieldId, int processParameterId, int browseFieldId,
+		int columnId, String columnName, String tableName,
+		int validationRuleId, String customRestriction
+	) {
+		return getInfoFromRequest(
+			displayTypeId,
+			fieldId, processParameterId, browseFieldId,
+			columnId, columnName, tableName,
+			0, null, false
+		);
+	}
+
+	/**
+	 * Get reference Info from request
+	 * @param request
+	 * @return
+	 */
+	static public MLookupInfo getInfoFromRequest(
+		int displayTypeId,
+		int fieldId, int processParameterId, int browseFieldId,
+		int columnId, String columnName, String tableName,
+		int validationRuleId, String customRestriction, boolean isWithoutValidation
+	) {
 		int referenceValueId = 0;
-		int validationRuleId = 0;
 		if(fieldId > 0) {
 			MField field = new MField(Env.getCtx(), fieldId, null);
 			if(field == null || field.getAD_Field_ID() <= 0) {
@@ -275,17 +325,21 @@ public class ReferenceInfo {
 			}
 			List<MField> customFields = ASPUtil.getInstance(Env.getCtx()).getWindowFields(field.getAD_Tab_ID());
 			if(customFields != null) {
-				Optional<MField> maybeField = customFields.stream().filter(customField -> customField.getAD_Field_ID() == fieldId).findFirst();
+				Optional<MField> maybeField = customFields.parallelStream()
+					.filter(customField -> {
+						return customField.getAD_Field_ID() == fieldId;
+					})
+					.findFirst();
 				if(maybeField.isPresent()) {
 					field = maybeField.get();
 					MColumn column = MColumn.get(Env.getCtx(), field.getAD_Column_ID());
 					//	Display Type
-					referenceId = column.getAD_Reference_ID();
+					displayTypeId = column.getAD_Reference_ID();
 					referenceValueId = column.getAD_Reference_Value_ID();
 					validationRuleId = column.getAD_Val_Rule_ID();
 					columnName = column.getColumnName();
 					if(field.getAD_Reference_ID() > 0) {
-						referenceId = field.getAD_Reference_ID();
+						displayTypeId = field.getAD_Reference_ID();
 					}
 					if(field.getAD_Reference_Value_ID() > 0) {
 						referenceValueId = field.getAD_Reference_Value_ID();
@@ -302,10 +356,14 @@ public class ReferenceInfo {
 			}
 			List<MBrowseField> customFields = ASPUtil.getInstance(Env.getCtx()).getBrowseFields(browseField.getAD_Browse_ID());
 			if(customFields != null) {
-				Optional<MBrowseField> maybeField = customFields.stream().filter(customField -> customField.getAD_Browse_Field_ID() == browseFieldId).findFirst();
+				Optional<MBrowseField> maybeField = customFields.parallelStream()
+					.filter(customField -> {
+						return customField.getAD_Browse_Field_ID() == browseFieldId;
+					})
+					.findFirst();
 				if(maybeField.isPresent()) {
 					browseField = maybeField.get();
-					referenceId = browseField.getAD_Reference_ID();
+					displayTypeId = browseField.getAD_Reference_ID();
 					referenceValueId = browseField.getAD_Reference_Value_ID();
 					validationRuleId = browseField.getAD_Val_Rule_ID();
 					MViewColumn viewColumn = browseField.getAD_View_Column();
@@ -323,10 +381,14 @@ public class ReferenceInfo {
 			}
 			List<MProcessPara> customParameters = ASPUtil.getInstance(Env.getCtx()).getProcessParameters(processParameter.getAD_Process_ID());
 			if(customParameters != null) {
-				Optional<MProcessPara> maybeParameter = customParameters.stream().filter(customField -> customField.getAD_Process_Para_ID() == processParameterId).findFirst();
+				Optional<MProcessPara> maybeParameter = customParameters.parallelStream()
+					.filter(customField -> {
+						return customField.getAD_Process_Para_ID() == processParameterId;
+					})
+					.findFirst();
 				if(maybeParameter.isPresent()) {
 					processParameter = maybeParameter.get();
-					referenceId = processParameter.getAD_Reference_ID();
+					displayTypeId = processParameter.getAD_Reference_ID();
 					referenceValueId = processParameter.getAD_Reference_Value_ID();
 					validationRuleId = processParameter.getAD_Val_Rule_ID();
 					columnName = processParameter.getColumnName();
@@ -337,23 +399,7 @@ public class ReferenceInfo {
 			if(column == null || column.getAD_Column_ID() <= 0) {
 				throw new AdempiereException("@AD_Column_ID@ @NotFound@");
 			}
-			referenceId = column.getAD_Reference_ID();
-			referenceValueId = column.getAD_Reference_Value_ID();
-			validationRuleId = column.getAD_Val_Rule_ID();
-			columnName = column.getColumnName();
-		} else if(referenceId > 0) {
-			X_AD_Reference reference = new X_AD_Reference(Env.getCtx(), referenceId, null);
-			if(reference == null || reference.getAD_Reference_ID() <= 0) {
-				throw new AdempiereException("@AD_Reference_ID@ @NotFound@");
-			}
-			referenceValueId = referenceId;
-			referenceId = DisplayType.Search;
-		} else if(columnId > 0) {
-			MColumn column = MColumn.get(Env.getCtx(), columnId);
-			if(column == null || column.getAD_Column_ID() <= 0) {
-				throw new AdempiereException("@AD_Column_ID@ @NotFound@");
-			}
-			referenceId = column.getAD_Reference_ID();
+			displayTypeId = column.getAD_Reference_ID();
 			referenceValueId = column.getAD_Reference_Value_ID();
 			validationRuleId = column.getAD_Val_Rule_ID();
 			columnName = column.getColumnName();
@@ -364,17 +410,17 @@ public class ReferenceInfo {
 				if (column == null || column.getAD_Column_ID() <= 0) {
 					throw new AdempiereException("@ColumnName@ @NotFound@");
 				}
-				referenceId = column.getAD_Reference_ID();
+				displayTypeId = column.getAD_Reference_ID();
 				if (referenceValueId <= 0) {
 					referenceValueId = column.getAD_Reference_Value_ID();
 				}
-				if (referenceId == DisplayType.ID) {
+				if (displayTypeId == DisplayType.ID) {
 					if (referenceValueId > 0) {
 						//	Is force a Table
-						referenceId = DisplayType.Table;
+						displayTypeId = DisplayType.Table;
 					} else {
 						//	Is force a Table Direct
-						referenceId = DisplayType.TableDir;
+						displayTypeId = DisplayType.TableDir;
 					}
 				}
 				validationRuleId = column.getAD_Val_Rule_ID();
@@ -384,26 +430,39 @@ public class ReferenceInfo {
 				if (keyColumns != null && keyColumns.length > 0) {
 					if (keyColumns.length == 1) {
 						//	Single key is force a Table Direct
-						referenceId = DisplayType.TableDir;
+						displayTypeId = DisplayType.TableDir;
 						columnName = tableName + "_ID";
 					} else {
 						//	Multi keys if force a Table
-						referenceId = DisplayType.Table;
+						displayTypeId = DisplayType.Table;
 						columnName = keyColumns[0];
 					}
 				}
 			}
+		} else if(displayTypeId > 0) {
+			X_AD_Reference reference = new X_AD_Reference(Env.getCtx(), displayTypeId, null);
+			if(reference == null || reference.getAD_Reference_ID() <= 0) {
+				throw new AdempiereException("@AD_Reference_ID@ @NotFound@");
+			}
+			referenceValueId = displayTypeId;
+			displayTypeId = DisplayType.Search;
 		} else {
 			throw new AdempiereException(
 				"@AD_Reference_ID@ / @AD_Column_ID@ / @AD_Table_ID@ / @AD_Field_ID@ / @AD_Process_Para_ID@ / @AD_Browse_Field_ID@ / @IsMandatory@"
 			);
 		}
 
+		// wihtout dynamic validation restriction
+		if (isWithoutValidation) {
+			validationRuleId = 0;
+		}
+
 		return ReferenceUtil.getReferenceLookupInfo(
-			referenceId,
+			displayTypeId,
 			referenceValueId,
 			columnName,
-			validationRuleId
+			validationRuleId,
+			customRestriction
 		);
 	}
 
