@@ -250,14 +250,15 @@ public class Security extends SecurityImplBase {
 
 		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSession(
-			currentSession.getWebSession(),
-			language,
-			role.getAD_Role_ID(),
-			userId,
-			currentSession.getAD_Org_ID(),
-			warehouseId
+		final MSession session = SessionManager.createSession(
+		    currentSession.getWebSession(),
+		    language,
+		    role.getAD_Role_ID(),
+		    userId,
+		    currentSession.getAD_Org_ID(),
+		    warehouseId
 		);
+		final String bearerToken = session.toString(); // o session.getAccessToken() o similar
 
 		// Update session preferences
 		PreferenceUtil.saveSessionPreferences(
