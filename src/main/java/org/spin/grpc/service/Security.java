@@ -250,7 +250,7 @@ public class Security extends SecurityImplBase {
 
 		// Session values
 		Session.Builder builder = Session.newBuilder();
-		final String bearerToken = SessionManager.createSession(
+		final String bearerToken = SessionManager.createSessionAndGetToken(
 			currentSession.getWebSession(),
 			language,
 			role.getAD_Role_ID(),
@@ -821,7 +821,7 @@ public class Security extends SecurityImplBase {
 			}
 
 			//	Session values
-			final String bearerToken = SessionManager.createSession(clientVersion, language, roleId, userId, organizationId, warehouseId);
+			final String bearerToken = SessionManager.createSessionAndGetToken(clientVersion, language, roleId, userId, organizationId, warehouseId);
 			builder.setToken(bearerToken);
 			//	Return session
 			return builder;
