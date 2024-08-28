@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'com.google.protobuf' version '0.9.3'
+    id 'com.google.protobuf' version '0.9.4'
     id 'idea'
     id 'application'
     id 'visual-studio'
@@ -8,23 +8,39 @@ plugins {
 }
 
 group 'com.nikhilm'
+
 sourceCompatibility = 1.11
-def grpcVersion = '1.58.0'
+
+def grpcVersion = '1.63.0'
+def protobufVersion = '3.25.3'
 def baseVersion = '3.9.4'
 def baseGroupId = 'io.github.adempiere'
 def customBaseVersion = ""
+
+def descriptorFile = "adempiere-grpc-server.pb"
 def javaMainClass = "org.spin.server.AllInOneServices"
 
 repositories {
-	mavenLocal()
+    maven { // The google mirror is less flaky than mavenCentral()
+        url "https://maven-central.storage-download.googleapis.com/repos/central/data/"
+    }
+    maven { url "https://clojars.org/repo" }
     mavenCentral()
+    mavenLocal()
+//	maven {
+//		url = 'https://maven.pkg.github.com/solop-develop/adempiere_customizations'
+//		credentials {
+//			username = System.getenv("GITHUB_DEPLOY_USER") ?: System.properties['deploy.user']
+//			password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: System.properties['deploy.token']
+//		}
+//	}
     maven {
-    	url = System.getenv("GITHUB_DEPLOY_REPOSITORY") ?: System.properties['deploy.repository'] ?: 'https://maven.pkg.github.com'
+        url = "https://maven.pkg.github.com/spuy/spuy-core"
         credentials {
-        	username = System.getenv("GITHUB_DEPLOY_USER") ?: System.properties['deploy.user']
-            password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: System.properties['deploy.token'] 
-		}
-	}
+            username = System.getenv("GITHUB_DEPLOY_USER") ?: project.properties['deploy.user']
+            password = System.getenv("GITHUB_DEPLOY_TOKEN") ?: project.properties['deploy.token']
+        }
+    }
 }
 dependencies {
     implementation fileTree(
@@ -33,21 +49,29 @@ dependencies {
             '*.jar'
         ]
     )
-	implementation "io.netty:netty-handler:4.1.99.Final"
+
+    //implementation project(":spuy-core")
+    //implementation 'uy.solop:050-spuy-core:3.9.4-r-17.10'
+
+	implementation "io.netty:netty-handler:4.1.107.Final"
     implementation "io.grpc:grpc-alts:${grpcVersion}"
 	runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
     implementation "io.grpc:grpc-protobuf:${grpcVersion}"
     implementation "io.grpc:grpc-stub:${grpcVersion}"
     implementation "io.grpc:grpc-netty:${grpcVersion}"
     // https://mvnrepository.com/artifact/com.google.protobuf/protobuf-java
-	implementation 'com.google.protobuf:protobuf-java:3.24.3'
-	implementation 'com.google.protobuf:protobuf-java-util:3.24.3'
+	implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+	implementation "com.google.protobuf:protobuf-java-util:${protobufVersion}"
     implementation 'javax.xml.bind:jaxb-api:2.4.0-b180830.0359'
 	implementation 'com.sun.xml.bind:jaxb-impl:3.0.0-M4'
 	implementation 'com.sun.xml.bind:jaxb-core:3.0.0-M4'
 	implementation 'javax.activation:activation:1.1.1'
-
-	implementation "${baseGroupId}:adempiere-grpc-utils:1.3.2"
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.2'
+	implementation 'io.jsonwebtoken:jjwt-impl:0.11.2'
+	implementation 'io.jsonwebtoken:jjwt-jackson:0.11.2'
+	implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.0'
+	//	ADempiere Core + Patches
+//	implementation 'com.solop.adempiere:adempiere-customizations.customizations_libs:3.9.4.001-1.0.1'
 
 	//	ADempiere Core
 	implementation "${baseGroupId}:base:${baseVersion}"
@@ -88,16 +112,22 @@ dependencies {
 	implementation "org.codehaus.groovy:groovy-all:2.4.15"
 
 	// ADempiere Projects with additional features
-	// Dashboard Improvements
+	//	ADempiere gRPC Utils Base (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-grpc-utils)
+	implementation "${baseGroupId}:adempiere-grpc-utils:1.4.6"
+	// Dashboard Improvements (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-dashboard-improvements)
 	implementation "${baseGroupId}:adempiere-dashboard-improvements:1.0.8"
-	// Point Of Sales Improvements
-	implementation "${baseGroupId}:adempiere-pos-improvements:1.0.1"
-	// Business Processors (To Task's and Schedulers)
+	// Point Of Sales Improvements (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-pos-improvements)
+	implementation "${baseGroupId}:adempiere-pos-improvements:1.0.2"
+	// Business Processors (To Task's and Schedulers) (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-business-processors)
 	implementation "${baseGroupId}:adempiere-business-processors:1.1.0"
-	// Engine as Queue
-	implementation "${baseGroupId}:adempiere-kafka-connector:1.1.0"
-	// Third part access using JWT
+	// Engine as Queue (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-kafka-connector)
+	implementation "${baseGroupId}:adempiere-kafka-connector:1.3.0"
+	// AWS3 Connector to use as File Storagee (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-s3-connector)
+	implementation 'io.github.adempiere:adempiere-s3-connector:1.0.4'
+	// Third part access using JWT (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-jwt-token)
 	implementation "${baseGroupId}:adempiere-jwt-token:1.0.2"
+
+    implementation "joda-time:joda-time:2.8.1"
 	// https://mvnrepository.com/artifact/com.nimbusds/oauth2-oidc-sdk
 	implementation 'com.nimbusds:oauth2-oidc-sdk:9.35'
 	// https://mvnrepository.com/artifact/com.nimbusds/nimbus-jose-jwt
@@ -108,8 +138,9 @@ dependencies {
 	implementation 'net.minidev:json-smart:2.4.8'
 	// https://mvnrepository.com/artifact/net.minidev/accessors-smart
 	implementation 'net.minidev:accessors-smart:2.4.8'
+
 	//	Temporary projects
-	//	Keycloak and Okta connector (Open-ID  based)
+	//	Keycloak and Okta connector (Open-ID based) (https://central.sonatype.com/artifact/io.github.adempiere/adempiere-open-id-connector)
 	implementation "${baseGroupId}:adempiere-open-id-connector:1.0.0"
 }
 
@@ -117,42 +148,57 @@ configurations.all {
 	resolutionStrategy {
 		// used by aws-java-sdk-core (storefront is joda-time-2.10.4)
 		force("joda-time:joda-time:2.8.1")
-		// force("io.github.adempiere:adempiere-grpc-utils:local-1.0.1")
+		// force("io.github.adempiere:adempiere-grpc-utils:local-1.0.0")
 	}
 }
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.24.3"
+		artifact = "com.google.protobuf:protoc:${protobufVersion}"
     }
     plugins {
         grpc {
-            artifact = 'io.grpc:protoc-gen-grpc-java:1.34.1'
+			artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}"
         }
     }
     generateProtoTasks {
         all()*.plugins {
             grpc {}
-        }
-        all().configureEach { task ->
-      		  // If true, will generate a descriptor_set.desc file under
-			  // task.outputBaseDir. Default is false.
-			  // See --descriptor_set_out in protoc documentation about what it is.
-			  task.generateDescriptorSet = true
-			
-			  // Allows to override the default for the descriptor set location
-			  task.descriptorSetOptions.path =
-			    "${projectDir}/build/descriptors/adempiere-grpc-server.pb"
-			
-			  // If true, the descriptor set will contain line number information
-			  // and comments. Default is false.
-			  task.descriptorSetOptions.includeSourceInfo = true
-			
-			  // If true, the descriptor set will contain all transitive imports and
-			  // is therefore self-contained. Default is false.
-			  task.descriptorSetOptions.includeImports = true
-    	}
-    }
+		}
+		all().configureEach { task ->
+			// If true, will generate a descriptor_set.desc file under
+			// task.outputBaseDir. Default is false.
+			// See --descriptor_set_out in protoc documentation about what it is.
+			task.generateDescriptorSet = true
+
+			// Allows to override the default for the descriptor set location
+			task.descriptorSetOptions.path = "${projectDir}/build/descriptors/${descriptorFile}"
+			// task.descriptorSetOptions.path = "${projectDir}/build/descriptors/adempiere-grpc-server.pb"
+
+			// If true, the descriptor set will contain line number information
+			// and comments. Default is false.
+			task.descriptorSetOptions.includeSourceInfo = true
+
+			// If true, the descriptor set will contain all transitive imports and
+			// is therefore self-contained. Default is false.
+			task.descriptorSetOptions.includeImports = true
+		}
+	}
+}
+// Copy proto descriptor another folder
+allprojects {
+	task copyDescriptor(type: Copy) {
+		from "${projectDir}/build/descriptors/${descriptorFile}"
+		into "${projectDir}/resources/"
+		// into "${projectDir}/docker-compose/envoy/definitions/"
+		// rename { "${descriptorFile}" }
+	}
+
+	tasks.matching {
+		it.name.startsWith('compileJava')
+	}.each { task ->
+		task.finalizedBy copyDescriptor
+	}
 }
 
 // Inform IDEs like IntelliJ IDEA, Eclipse or NetBeans about the generated code.
@@ -225,6 +271,11 @@ task createRelease(type: Copy) {
    	}
 }
 
+tasks.withType(Copy) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+tasks.withType(Tar) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+tasks.withType(Zip) { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
+
+
 task cleanBuild(type: GradleBuild) {
 	tasks = ['clean', 'build']
 }
@@ -235,10 +286,10 @@ publishing {
     repositories {
 		mavenLocal()
         maven {
-            url = System.properties['deploy.packages'] ?: System.getenv("GITHUB_PACKAGES_URL") ?: "https://maven.pkg.github.com/solop-develop/backend"
+            url = System.properties['deploy.packages'] ?: System.getenv("GITHUB_PACKAGES_URL") ?: "https://maven.pkg.github.com/spuy/backend"
             credentials {
-                username = System.properties['deploy.user'] ?: System.getenv("GITHUB_DEPLOY_USER") ?: ''
-                password = System.properties['deploy.token'] ?: System.getenv("GITHUB_DEPLOY_TOKEN") ?: ''
+                username = project.properties['deploy.user'] ?: System.getenv("GITHUB_DEPLOY_USER")
+                password = project.properties['deploy.token'] ?: System.getenv("GITHUB_DEPLOY_TOKEN")
             }
         }
     }

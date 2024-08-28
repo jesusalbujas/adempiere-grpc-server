@@ -51,36 +51,42 @@ jobs:
         with:
           name: adempiere-grpc-server.pb
           path: build/descriptors/adempiere-grpc-server.pb
+          retention-days: 1
 
       - name: Upload envoy file artifact
         uses: actions/upload-artifact@v4
         with:
           name: envoy.yaml
           path: resources/envoy.yaml
+          retention-days: 1
 
       - name: Upload dist app zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: adempiere-grpc-server.zip
           path: build/release/adempiere-grpc-server.zip
+          retention-days: 1
 
       - name: Upload dist app zip.MD5 artifact
         uses: actions/upload-artifact@v4
         with:
           name: adempiere-grpc-server.zip.MD5
           path: build/release/adempiere-grpc-server.zip.MD5
+          retention-days: 1
 
       - name: Upload dist app tar artifact
         uses: actions/upload-artifact@v4
         with:
           name: adempiere-grpc-server.tar
           path: build/release/adempiere-grpc-server.tar
+          retention-days: 1
 
       - name: Upload dist app tar.MD5 artifact
         uses: actions/upload-artifact@v4
         with:
           name: adempiere-grpc-server.tar.MD5
           path: build/release/adempiere-grpc-server.tar.MD5
+          retention-days: 1
 
 
 
@@ -151,42 +157,42 @@ jobs:
       - name: Upload Descriptor
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.pb/adempiere-grpc-server.pb
           
       - name: Upload Envoy config
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: envoy.yaml/envoy.yaml
 
       - name: Upload zip
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.zip/adempiere-grpc-server.zip
 
       - name: Upload zip.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.zip.MD5/adempiere-grpc-server.zip.MD5
 
       - name: Upload tar
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.tar/adempiere-grpc-server.tar
 
       - name: Upload tar.MD5
         uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
         with:
           args: adempiere-grpc-server.tar.MD5/adempiere-grpc-server.tar.MD5
 
