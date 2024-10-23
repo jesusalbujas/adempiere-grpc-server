@@ -2560,27 +2560,23 @@ public class UserInterface extends UserInterfaceImplBase {
 			if (tab == null || tab.getAD_Tab_ID() <= 0) {
 				throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
 			}
-		
+
 			// Ejecutar el callout
 			String result = processCallout(windowNo, gridTab, gridField);
-	
+			
 			// Verificar si el resultado indica un error
 			if (result.startsWith("Error:")) {
 				calloutBuilder.setResult(result); // Enviar el mensaje de error
 				return; // Terminar aquí en caso de error
 			}
-	
+
 			// Preparar la respuesta en caso de éxito
 			Struct.Builder contextValues = Struct.newBuilder();
-			// Aquí puedes agregar código para llenar contextValues con los valores deseados.
-	
+
 			// Asignar los resultados al calloutBuilder
 			calloutBuilder.setResult(ValueManager.validateNull(result))
 						  .setValues(contextValues);
-		});
-		return calloutBuilder;
-	}
-	
+
 
 			MField field = null;
 			Optional<MField> searchedValue = Arrays.asList(tab.getFields(false, null)).stream()
