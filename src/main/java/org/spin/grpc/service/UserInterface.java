@@ -2545,6 +2545,12 @@ public class UserInterface extends UserInterfaceImplBase {
 	 * @return
 	 */
 	private org.spin.backend.grpc.user_interface.Callout.Builder runcallout(RunCalloutRequest request) {
+		// Inicializar las variables necesarias
+		int windowNo = request.getWindowNo(); // Asegúrate de que esto esté disponible
+		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+		GridTab gridTab = new GridTab(tab); // Inicializa gridTab según tu lógica
+		GridField gridField = new GridField(); // Inicializa gridField según tu lógica
+
 		if (Util.isEmpty(request.getCallout(), true)) {
 			throw new AdempiereException("@FillMandatory@ @Callout@");
 		}
