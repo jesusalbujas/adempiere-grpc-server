@@ -2558,6 +2558,18 @@ public class UserInterface extends UserInterfaceImplBase {
 			throw new AdempiereException("@FillMandatory@ @ColumnName@");
 		}
 		org.spin.backend.grpc.user_interface.Callout.Builder calloutBuilder = org.spin.backend.grpc.user_interface.Callout.newBuilder();
+		// Inicializar las variables necesarias
+		int windowNo = request.getWindowNo(); // Asegúrate de que esto esté disponible
+		MTab tab = MTab.get(Env.getCtx(), request.getTabId());
+		if (tab == null || tab.getAD_Tab_ID() <= 0) {
+			throw new AdempiereException("@AD_Tab_ID@ @NotFound@");
+		}
+
+		// Crear GridTab y GridField
+		GridWindow gridWindow = new GridWindow(GridWindowVO.create(Env.getCtx(), windowNo, tab.getAD_Window_ID()), true);
+		GridTab gridTab = new GridTab(GridTabVO.create(gridWindow.getVO(), tab), gridWindow, true);
+		GridField gridField = new GridField(GridFieldVO.create(Env.getCtx(), windowNo, tab.getAD_Tab_ID(), tab.getAD_Window_ID(), tab.getAD_Tab_ID(), false, tab.getField(request.getColumnName())));
+		
 		Trx.run(transactionName -> {
 			if (request.getTabId() <= 0) {
 				throw new AdempiereException("@FillMandatory@ @AD_Tab_ID@");
